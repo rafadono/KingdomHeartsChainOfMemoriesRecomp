@@ -1,0 +1,26 @@
+[game]
+name = "Kingdom Hearts: Chain of Memories"
+short_name = "KHCOM"
+default_region = "USA"
+
+[rom]
+path = "roms/Kingdom Hearts - Chain of Memories (U)(Venom).gba"
+sha1 = "10729bd884f8fdca7a310b6d606c52e46657aa48"
+
+[bios]
+path = "bios/gba_bios.bin"
+sha1 = "300c20df6731a33952ded8c436f7f186d25d3492"
+hle = false
+
+[save]
+type = "eeprom"
+size = 8192
+
+[video]
+view_width = 284
+max_resize_view_width = 576
+resize_view = true
+
+[audio]
+shadow = true
+

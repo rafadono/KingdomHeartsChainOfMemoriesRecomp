@@ -1,0 +1,38 @@
+# Build directories
+build/
+build-vs/
+bin/
+out/
+cmake-build-*/
+.cache/
+recomp_cache/
+
+# ROM and save files
+roms/*.gba
+roms/*.bin
+roms/*.sav
+*.sav
+
+# Third party dependencies
+third_party/sdl2/
+third_party/temp/
+
+# IDE and system files
+.vs/
+.vscode/
+.agents/
+scratch/
+RULES.md
+*.user
+*.suo
+Thumbs.db
+[Dd]esktop.ini
+
+# Intermediate decompilation outputs (large raw files)
+symbols/*_readelf_*.txt
+symbols/*.map
+symbols/*.elf
+
+# Keep directories intact
+!roms/.gitkeep
+!generated/.gitkeep

@@ -1,0 +1,87 @@
+[program]
+name = "Kingdom Hearts: Chain of Memories"
+id = "B8CE"
+load_address = 0x08000000
+size = 0x02000000
+entry_pc = 0x08000000
+
+[identity]
+sha1 = "10729bd884f8fdca7a310b6d606c52e46657aa48"
+
+[[extra_func]]
+addr = 0x080000C0
+mode = "arm"
+name = "crt0_entry"
+
+[[extra_func]]
+addr = 0x0811F590
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F5B0
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F640
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F648
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F664
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F6B4
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F6BA
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F6C8
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F6CE
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F6DC
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F6F6
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F6FE
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F706
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F70C
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F712
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F720
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0811F726
+mode = "thumb"
+
+[[data_range]]
+start = 0x08000004
+end = 0x080000C0
+note = "GBA cartridge header data (logo, metadata, checksum)"

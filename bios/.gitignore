@@ -1,0 +1,6 @@
+# GBA BIOS directory
+*.bin
+*.BIN
+*.gba
+*.GBA
+!gba_bios.bin.gitkeep
