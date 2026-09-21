@@ -28,9 +28,6 @@ jobs:
         with:
           arch: x64
 
-      - name: Set up Ninja
-        uses: ninja-build/setup-ninja@v1
-
       - name: Build Project
         shell: powershell
         run: |
