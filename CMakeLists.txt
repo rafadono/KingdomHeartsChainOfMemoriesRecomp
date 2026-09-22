@@ -21,7 +21,7 @@ if(NOT EXISTS "${GBARECOMP_ROOT}/CMakeLists.txt")
 endif()
 
 # SDL2 dependency configuration
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/include/SDL.h")
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/include/SDL.h")
     set(SDL2_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/include" CACHE PATH "SDL2 include dir" FORCE)
     set(SDL2_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/lib/x64/SDL2.lib" CACHE FILEPATH "SDL2 library" FORCE)
 endif()
@@ -71,6 +71,8 @@ set(KHCOM_RUNTIME_SOURCES
     src/hud_anchoring.cpp
     src/dialogue_enhancer.cpp
     src/dialogue_backlog.cpp
+    src/ram_overlay_dispatch.cpp
+    src/widescreen_adapter.cpp
 )
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/dispatch_table.cpp")

@@ -54,7 +54,7 @@ private:
     ~ScreenFilters();
 
     void generate_lut(ColorProfile profile);
-    void ensure_mask_texture(SDL_Renderer* renderer, ScreenMaskType type, int game_w, int game_h);
+    void ensure_mask_texture(SDL_Renderer* renderer, ScreenMaskType type, int dest_w, int dest_h, int game_w, int game_h);
 
     ScreenFilterSettings settings_;
     ColorProfile active_lut_profile_ = ColorProfile::Raw;
@@ -66,6 +66,8 @@ private:
     ScreenMaskType cached_mask_type_ = ScreenMaskType::Off;
     int cached_mask_w_ = 0;
     int cached_mask_h_ = 0;
+    int cached_game_w_ = 0;
+    int cached_game_h_ = 0;
     float cached_mask_intensity_ = -1.0f;
 };
 

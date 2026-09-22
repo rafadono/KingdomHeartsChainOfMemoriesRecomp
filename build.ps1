@@ -147,4 +147,16 @@ Write-Host "[KHCOMRecomp] Configuring CMake in $buildDir..."
 Write-Host "[KHCOMRecomp] Compiling target '$Target' ($Config)..."
 & $cmakePath --build $buildDir --config $Config --target $Target --parallel
 
+$builtExe = Join-Path $buildDir "$Config\KHCOMRecomp.exe"
+if (Test-Path -LiteralPath $builtExe) {
+    Copy-Item -LiteralPath $builtExe -Destination (Join-Path $root "KHCOMRecomp.exe") -Force
+    Write-Host "[KHCOMRecomp] Deployed KHCOMRecomp.exe to workspace root."
+}
+
+$builtToolchain = Join-Path $buildDir "$Config\overlay_toolchain"
+if (Test-Path -LiteralPath $builtToolchain) {
+    Copy-Item -Path $builtToolchain -Destination (Join-Path $root "overlay_toolchain") -Recurse -Force
+    Write-Host "[KHCOMRecomp] Deployed overlay_toolchain to workspace root."
+}
+
 Write-Host "[KHCOMRecomp] Build completed successfully."

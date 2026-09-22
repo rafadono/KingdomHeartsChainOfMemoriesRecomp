@@ -2,15 +2,26 @@
 #include "frame_interpolator.h"
 #include "screen_filters.h"
 #include "dialogue_backlog.h"
+#include "ram_overlay_dispatch.h"
 #include <SDL.h>
 #ifdef SDL_RenderPresent
 #undef SDL_RenderPresent
+#endif
+#ifdef SDL_PollEvent
+#undef SDL_PollEvent
+#endif
+#ifdef SDL_UpdateTexture
+#undef SDL_UpdateTexture
+#endif
+#ifdef SDL_RenderCopy
+#undef SDL_RenderCopy
 #endif
 
 #include <algorithm>
 #include <cstdio>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 namespace khcom {
 
@@ -299,6 +310,17 @@ void PerfHud::render_hud(SDL_Renderer* renderer, int win_w, int win_h, int vp_x,
     int mx = 0, my = 0;
     Uint32 mstate = SDL_GetMouseState(&mx, &my);
     bool mouse_down = (mstate & SDL_BUTTON_LMASK) != 0;
+
+    SDL_Window* win = SDL_RenderGetWindow(renderer);
+    if (win) {
+        int cur_w = 0, cur_h = 0;
+        SDL_GetWindowSize(win, &cur_w, &cur_h);
+        if (cur_w > 0 && cur_h > 0) {
+            mx = (mx * win_w) / cur_w;
+            my = (my * win_h) / cur_h;
+        }
+    }
+
     update_drag(mx, my, mouse_down, hud_w, hud_h);
 
     pos_x = calculated_x_;
@@ -457,31 +479,104 @@ void PerfHud::on_frame_present(SDL_Renderer* renderer) {
 extern "C" {
 
 void SDL_RenderPresent(SDL_Renderer* renderer);
+int SDL_PollEvent(SDL_Event* event);
+int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void* pixels, int pitch);
+int SDL_RenderCopy(SDL_Renderer* renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect);
+extern "C" void khcom_update_widescreen_state();
+
+int khcom_poll_event_intercept(SDL_Event* event) {
+    khcom_update_widescreen_state();
+    khcom_install_ram_dispatch();
+    while (true) {
+        int res = (SDL_PollEvent)(event);
+        if (!res) {
+            return 0;
+        }
+        if (event && khcom::DialogueBacklog::instance().handle_event(*event)) {
+            continue;
+        }
+        return res;
+    }
+}
+
+int khcom_update_texture_intercept(SDL_Texture* texture, const SDL_Rect* rect, const void* pixels, int pitch) {
+    if (!texture || !pixels) {
+        return (SDL_UpdateTexture)(texture, rect, pixels, pitch);
+    }
+
+    uint32_t format = 0;
+    int access = 0, tex_w = 0, tex_h = 0;
+    if (SDL_QueryTexture(texture, &format, &access, &tex_w, &tex_h) == 0 &&
+        format == SDL_PIXELFORMAT_RGB24 && pitch >= tex_w * 3) {
+
+        auto& filters = khcom::ScreenFilters::instance();
+        if (filters.settings().color_profile != khcom::ColorProfile::Raw) {
+            static std::vector<uint8_t> s_color_buf;
+            size_t needed = static_cast<size_t>(pitch) * tex_h;
+            if (s_color_buf.size() < needed) {
+                s_color_buf.resize(needed);
+            }
+            std::memcpy(s_color_buf.data(), pixels, needed);
+            filters.apply_color_correction(s_color_buf.data(), tex_w, tex_h);
+            pixels = s_color_buf.data();
+        }
+    }
+
+    return (SDL_UpdateTexture)(texture, rect, pixels, pitch);
+}
+
+int khcom_render_copy_intercept(SDL_Renderer* renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect) {
+    if (!renderer || !texture) {
+        return (SDL_RenderCopy)(renderer, texture, srcrect, dstrect);
+    }
+
+    uint32_t format = 0;
+    int access = 0, tex_w = 0, tex_h = 0;
+    if (SDL_QueryTexture(texture, &format, &access, &tex_w, &tex_h) == 0 && format == SDL_PIXELFORMAT_RGB24) {
+        int lw = 0, lh = 0;
+        SDL_RenderGetLogicalSize(renderer, &lw, &lh);
+        int out_w = 0, out_h = 0;
+        SDL_GetRendererOutputSize(renderer, &out_w, &out_h);
+
+        if (dstrect != nullptr) {
+            if (lw > 0 && lh > 0) {
+                SDL_RenderSetLogicalSize(renderer, 0, 0);
+            }
+            int res = (SDL_RenderCopy)(renderer, texture, srcrect, dstrect);
+            khcom::ScreenFilters::instance().render_mask(renderer, dstrect, tex_w, tex_h);
+            return res;
+        } else {
+            if (tex_w == 240 && tex_h == 160) {
+                if (lw != 240 || lh != 160) {
+                    SDL_RenderSetLogicalSize(renderer, 240, 160);
+                }
+                int res = (SDL_RenderCopy)(renderer, texture, srcrect, nullptr);
+                SDL_Rect vp{};
+                SDL_RenderGetViewport(renderer, &vp);
+                khcom::ScreenFilters::instance().render_mask(renderer, &vp, 240, 160);
+                return res;
+            } else {
+                SDL_RenderSetLogicalSize(renderer, 0, 0);
+                float s = std::min(static_cast<float>(out_w) / tex_w, static_cast<float>(out_h) / tex_h);
+                int dw = static_cast<int>(tex_w * s);
+                int dh = static_cast<int>(tex_h * s);
+                SDL_Rect centered_dst = { (out_w - dw) / 2, (out_h - dh) / 2, dw, dh };
+                int res = (SDL_RenderCopy)(renderer, texture, srcrect, &centered_dst);
+                khcom::ScreenFilters::instance().render_mask(renderer, &centered_dst, tex_w, tex_h);
+                return res;
+            }
+        }
+    }
+
+    return (SDL_RenderCopy)(renderer, texture, srcrect, dstrect);
+}
 
 void khcom_render_present_intercept(SDL_Renderer* renderer) {
     if (renderer) {
-        // Hotkey check for Dialogue Backlog (L / F2 / Gamepad Back)
-        const uint8_t* keyboard_state = SDL_GetKeyboardState(nullptr);
-        bool l_down = keyboard_state && (keyboard_state[SDL_SCANCODE_L] || keyboard_state[SDL_SCANCODE_F2]);
-        static bool s_last_l_state = false;
-        if (l_down && !s_last_l_state) {
-            khcom::DialogueBacklog::instance().toggle_open();
-        }
-        s_last_l_state = l_down;
-
-        if (khcom::DialogueBacklog::instance().is_open() && keyboard_state && keyboard_state[SDL_SCANCODE_ESCAPE]) {
-            khcom::DialogueBacklog::instance().set_open(false);
-        }
-
         SDL_Rect game_viewport{};
         int logical_w = 0, logical_h = 0;
         SDL_RenderGetLogicalSize(renderer, &logical_w, &logical_h);
         SDL_RenderGetViewport(renderer, &game_viewport);
-
-        khcom::ScreenFilters::instance().render_mask(
-            renderer, &game_viewport,
-            logical_w > 0 ? logical_w : 240,
-            logical_h > 0 ? logical_h : 160);
 
         khcom::FrameInterpolator::instance().on_present(renderer, &game_viewport);
         khcom::PerfHud::instance().on_frame_present(renderer);
@@ -493,5 +588,4 @@ void khcom_render_present_intercept(SDL_Renderer* renderer) {
         (SDL_RenderPresent)(renderer);
     }
 }
-
 }

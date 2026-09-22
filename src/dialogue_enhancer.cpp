@@ -1,4 +1,5 @@
 #include "dialogue_enhancer.h"
+#include "dialogue_backlog.h"
 #include <cctype>
 #include <sstream>
 
@@ -119,6 +120,10 @@ std::string DialogueEnhancer::process_dialogue_text(std::string_view raw_text) {
                 current_line_len = 0;
             }
         }
+    }
+
+    if (result.size() >= 3) {
+        DialogueBacklog::instance().push_entry("Story", result);
     }
 
     return result;

@@ -3,6 +3,7 @@
 #include <string>
 #include "runtime.h"
 #include "game_config.h"
+#include "ram_overlay_dispatch.h"
 
 #if defined(RECOMP_LAUNCHER)
 #include "launcher_seam.h"
@@ -12,6 +13,7 @@ int main(int argc, char** argv) {
     if (!std::getenv("GBARECOMP_RAM_OVERLAY_HEAL")) {
         _putenv("GBARECOMP_RAM_OVERLAY_HEAL=1");
     }
+    khcom_install_ram_dispatch();
     std::printf("%s Static Recompilation (KHCOMRecomp)\n", khcom::GAME_TITLE.data());
     auto opts = khcom::create_run_options();
 

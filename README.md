@@ -93,13 +93,18 @@ All adjustments made in the overlay take effect immediately in real time and are
 - **Smooth Navigation:** Scroll up and down using the mouse wheel, keyboard arrow keys, or gamepad D-Pad.
 - **Closing:** Press `Escape`, `L`, or Gamepad `B` / `Circle` to resume gameplay.
 
-### 8. Dynamic Widescreen HUD Anchoring
-- Repositions OAM sprite coordinates in widescreen viewports.
-- Shifts the Health Gauge to the top-left screen corner (`X -= offset`).
-- Shifts the Card Deck and card selector to the bottom-right corner (`X += offset`).
-- Frees the central screen area for unobstructed combat visibility.
+### 8. Adaptive Widescreen Architecture & HUD Anchoring
+- **Minish Cap Adaptive Widescreen Model:** Directly interfaces with the GBA PPU rasterizer to eliminate the 256px tilemap wrap duplication:
+  - `khcom_tilemap_provider`: Suppresses out-of-bounds wrapped tilemap entries (`kWsTilemapUnavailable`), preventing background scenery from repeating across the margins.
+  - `khcom_bg_x_provider`: Handles regular BG presentation per layer. Suppresses dialogue boxes on BG0 in margins so text windows remain centered over the 240px native play area without bleeding, anchors BG1 HUD backgrounds, and smoothly clamps BG2/BG3 arena scenery to edge columns (0 and 239).
+  - `khcom_obj_attr_x_provider`: Hooks OAM sprite attributes in real time. Shifts Sora's HP bar and boss gauges to the top-left margin (`X -= extra_left`), shifts the Card Deck and reload counter to the bottom-right margin (`X += extra_right`), and unwraps 9-bit signed sprite coordinates so off-screen entities do not pop into opposite margins.
+  - **Dynamic Pillarbox Management:** Automatically clears pillarbox black bars during active gameplay and battles in widescreen mode, while preserving authentic borders during menus or 3:2 classic play.
 
-### 9. Performance HUD & Frametime Graph
+### 9. Native RAM Overlay Dispatch & Combat Performance Optimization
+- **Binary-Search Dispatcher:** Routes all 168 dynamic IWRAM (`0x0300xxxx`) and EWRAM (`0x0203xxxx`) combat routines directly to their native recompiled implementations.
+- **Full 60 FPS Combat:** Completely eliminates dynamic interpretation drops and on-the-fly JIT compilation stutters during battles, card sleights, and enemy encounters.
+
+### 10. Performance HUD & Frametime Graph
 - Real-time FPS counter with 60 FPS target indicator (`[LOCKED]` vs `[VAR]`).
 - Precision frame duration in milliseconds and rolling average.
 - 120-frame rolling pacing history graph with 16.67 ms (60 FPS) target line.
@@ -107,11 +112,11 @@ All adjustments made in the overlay take effect immediately in real time and are
 - Movable positioning: Draggable with mouse anywhere on screen, including docking into the black letterbox / pillarbox bars.
 - Hotkey **`F10`** to cycle HUD display modes.
 
-### 10. Two-Tier Display Pipeline
+### 11. Two-Tier Display Pipeline
 - **Viewport Expansion (True Aspect Ratio Adjustment):**
   - `3:2 (Classic 240px)`: Authentic GBA frame.
   - `16:10 (Wide 256px)`: Extended field of view for 16:10 monitors and Steam Deck.
-  - `16:9 (Standard 284px)`: Clean widescreen layout.
+  - `16:9 (Standard 284px)`: Clean widescreen layout with non-repeating margin scenery.
   - `16:9 (High-Density 480px)`: High-density viewport showing doubled horizontal arena.
   - `16:9 (Full Arena 576px)`: Complete battle arena horizontal visibility.
   - `Adaptive View`: Dynamically expands the GBA PPU rasterizer width to match arbitrary window resizing.

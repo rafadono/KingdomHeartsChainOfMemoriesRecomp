@@ -95,7 +95,7 @@ void ScreenFilters::generate_lut(ColorProfile profile) {
 }
 
 void ScreenFilters::apply_color_correction(uint8_t* rgb24, int width, int height) {
-    if (settings_.color_profile == ColorProfile::Raw || !rgb24) return;
+    if (settings_.color_profile == ColorProfile::Raw || !rgb24 || width <= 0 || height <= 0) return;
     const size_t total_pixels = static_cast<size_t>(width) * height;
     for (size_t i = 0; i < total_pixels; ++i) {
         rgb24[i * 3 + 0] = lut_r_[rgb24[i * 3 + 0]];
@@ -104,12 +104,14 @@ void ScreenFilters::apply_color_correction(uint8_t* rgb24, int width, int height
     }
 }
 
-void ScreenFilters::ensure_mask_texture(SDL_Renderer* renderer, ScreenMaskType type, int game_w, int game_h) {
+void ScreenFilters::ensure_mask_texture(SDL_Renderer* renderer, ScreenMaskType type, int dest_w, int dest_h, int game_w, int game_h) {
     const float intensity = settings_.mask_intensity;
     if (mask_texture_ &&
         cached_mask_type_ == type &&
-        cached_mask_w_ == game_w &&
-        cached_mask_h_ == game_h &&
+        cached_mask_w_ == dest_w &&
+        cached_mask_h_ == dest_h &&
+        cached_game_w_ == game_w &&
+        cached_game_h_ == game_h &&
         std::abs(cached_mask_intensity_ - intensity) < 0.01f) {
         return;
     }
@@ -119,122 +121,173 @@ void ScreenFilters::ensure_mask_texture(SDL_Renderer* renderer, ScreenMaskType t
         mask_texture_ = nullptr;
     }
 
-    if (type == ScreenMaskType::Off) return;
+    if (type == ScreenMaskType::Off || dest_w <= 0 || dest_h <= 0) return;
 
-    // Build a mask pattern texture
-    int pattern_w = 6;
-    int pattern_h = 6;
+    // Pattern dimensions: generate a repeating texture or 1:1 viewport buffer
+    // For performance and sharpness, create a texture matching dest_w x dest_h
+    // or a compact repeating pattern with exact physical alignment.
+    int tex_w = dest_w;
+    int tex_h = dest_h;
 
+    // For repeating patterns with no GBA pixel cell dependency, keep texture small to save VRAM
     if (type == ScreenMaskType::CrtScanlines) {
-        pattern_w = 2;
-        pattern_h = 4;
+        tex_w = 4;
+        tex_h = 2; // 2 scanlines high
     } else if (type == ScreenMaskType::SubpixelRgb || type == ScreenMaskType::SubpixelBgr) {
-        pattern_w = 3;
-        pattern_h = 3;
-    } else if (type == ScreenMaskType::LcdGrid) {
-        pattern_w = 4;
-        pattern_h = 4;
+        tex_w = 3;
+        tex_h = 2;
+    } else if (type == ScreenMaskType::CrtTrinitron) {
+        tex_w = 3;
+        tex_h = 2;
+    } else if (type == ScreenMaskType::LcdDiffusion) {
+        tex_w = 2;
+        tex_h = 2;
     }
 
-    std::vector<uint32_t> pixels(pattern_w * pattern_h, 0xFFFFFFFF);
-    const uint8_t dark_val = static_cast<uint8_t>(255.0f * (1.0f - intensity * 0.75f));
+    std::vector<uint32_t> pixels(tex_w * tex_h, 0xFFFFFFFF);
 
-    for (int y = 0; y < pattern_h; ++y) {
-        for (int x = 0; x < pattern_w; ++x) {
-            uint8_t r = 255;
-            uint8_t g = 255;
-            uint8_t b = 255;
+    const float cell_w = (game_w > 0) ? (static_cast<float>(dest_w) / static_cast<float>(game_w)) : 4.0f;
+    const float cell_h = (game_h > 0) ? (static_cast<float>(dest_h) / static_cast<float>(game_h)) : 4.0f;
+
+    for (int y = 0; y < tex_h; ++y) {
+        for (int x = 0; x < tex_w; ++x) {
+            float r = 1.0f;
+            float g = 1.0f;
+            float b = 1.0f;
 
             switch (type) {
-            case ScreenMaskType::LcdGrid:
-                // Grid borders
-                if (x == pattern_w - 1 || y == pattern_h - 1) {
-                    r = g = b = dark_val;
+            case ScreenMaskType::CrtScanlines: {
+                // Alternating horizontal scanline dimming
+                if (y % 2 == 1) {
+                    float dim = 1.0f - intensity * 0.45f;
+                    r = g = b = dim;
                 }
                 break;
+            }
+
+            case ScreenMaskType::CrtTrinitron: {
+                // Sony Trinitron aperture grille: vertical phosphor stripes + fine scanline
+                const float scan_dim = (y % 2 == 1) ? (1.0f - intensity * 0.35f) : 1.0f;
+                const float phos_dim = 1.0f - intensity * 0.18f;
+                const int phos_idx = x % 3;
+                if (phos_idx == 0) {
+                    r = scan_dim;
+                    g = phos_dim * scan_dim;
+                    b = phos_dim * scan_dim;
+                } else if (phos_idx == 1) {
+                    r = phos_dim * scan_dim;
+                    g = scan_dim;
+                    b = phos_dim * scan_dim;
+                } else {
+                    r = phos_dim * scan_dim;
+                    g = phos_dim * scan_dim;
+                    b = scan_dim;
+                }
+                break;
+            }
+
+            case ScreenMaskType::LcdGrid: {
+                // GBA SP AGS-101 LCD Matrix Grid: dark grid border between GBA pixels
+                float fx = std::fmod(static_cast<float>(x), cell_w);
+                float fy = std::fmod(static_cast<float>(y), cell_h);
+                if (fx < 1.0f || fy < 1.0f) {
+                    float dim = 1.0f - intensity * 0.55f;
+                    r = g = b = dim;
+                }
+                break;
+            }
 
             case ScreenMaskType::SubpixelRgb: {
-                // Vertical RGB stripes
-                uint8_t dim = dark_val;
-                if (x == 0) { r = 255; g = dim; b = dim; }
-                else if (x == 1) { r = dim; g = 255; b = dim; }
-                else { r = dim; g = dim; b = 255; }
-                if (y == pattern_h - 1) {
-                    r = static_cast<uint8_t>(r * 0.85f);
-                    g = static_cast<uint8_t>(g * 0.85f);
-                    b = static_cast<uint8_t>(b * 0.85f);
+                // Fine 1-pixel vertical RGB phosphor stripes
+                const float phos_dim = 1.0f - intensity * 0.22f;
+                const int phos_idx = x % 3;
+                if (phos_idx == 0) {
+                    r = 1.0f; g = phos_dim; b = phos_dim;
+                } else if (phos_idx == 1) {
+                    r = phos_dim; g = 1.0f; b = phos_dim;
+                } else {
+                    r = phos_dim; g = phos_dim; b = 1.0f;
                 }
                 break;
             }
 
             case ScreenMaskType::SubpixelBgr: {
-                // Vertical BGR stripes
-                uint8_t dim = dark_val;
-                if (x == 0) { r = dim; g = dim; b = 255; }
-                else if (x == 1) { r = dim; g = 255; b = dim; }
-                else { r = 255; g = dim; b = dim; }
-                if (y == pattern_h - 1) {
-                    r = static_cast<uint8_t>(r * 0.85f);
-                    g = static_cast<uint8_t>(g * 0.85f);
-                    b = static_cast<uint8_t>(b * 0.85f);
+                // Fine 1-pixel vertical BGR phosphor stripes
+                const float phos_dim = 1.0f - intensity * 0.22f;
+                const int phos_idx = x % 3;
+                if (phos_idx == 0) {
+                    r = phos_dim; g = phos_dim; b = 1.0f;
+                } else if (phos_idx == 1) {
+                    r = phos_dim; g = 1.0f; b = phos_dim;
+                } else {
+                    r = 1.0f; g = phos_dim; b = phos_dim;
                 }
                 break;
             }
 
-            case ScreenMaskType::LcdDiffusion:
-                // Diagonal micro-pattern
-                if ((x + y) % 2 == 0) {
-                    r = g = b = dark_val;
+            case ScreenMaskType::LcdDiffusion: {
+                // Frontlit light-guide micro diffusion
+                if ((x + y) % 2 == 1) {
+                    float dim = 1.0f - intensity * 0.20f;
+                    r = g = b = dim;
                 }
                 break;
-
-            case ScreenMaskType::CrtScanlines:
-                // Scanlines on alternating rows
-                if (y >= pattern_h / 2) {
-                    r = g = b = dark_val;
-                }
-                break;
-
-            case ScreenMaskType::CrtTrinitron:
-                // Vertical wire aperture grille + scanlines
-                if (x == pattern_w - 1 || y == pattern_h - 1) {
-                    r = g = b = dark_val;
-                } else if (x == 0) {
-                    r = 255; g = dark_val; b = dark_val;
-                } else if (x == 1) {
-                    r = dark_val; g = 255; b = dark_val;
-                } else if (x == 2) {
-                    r = dark_val; g = dark_val; b = 255;
-                }
-                break;
+            }
 
             default:
                 break;
             }
 
+            uint8_t ur = static_cast<uint8_t>(std::clamp(r * 255.0f + 0.5f, 0.0f, 255.0f));
+            uint8_t ug = static_cast<uint8_t>(std::clamp(g * 255.0f + 0.5f, 0.0f, 255.0f));
+            uint8_t ub = static_cast<uint8_t>(std::clamp(b * 255.0f + 0.5f, 0.0f, 255.0f));
+
             // RGBA8888
-            pixels[y * pattern_w + x] = (255u << 24) | (static_cast<uint32_t>(b) << 16) | (static_cast<uint32_t>(g) << 8) | r;
+            pixels[y * tex_w + x] = (255u << 24) | (static_cast<uint32_t>(ub) << 16) | (static_cast<uint32_t>(ug) << 8) | ur;
         }
     }
 
-    mask_texture_ = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, pattern_w, pattern_h);
+    mask_texture_ = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, tex_w, tex_h);
     if (mask_texture_) {
-        SDL_UpdateTexture(mask_texture_, nullptr, pixels.data(), pattern_w * sizeof(uint32_t));
+        SDL_UpdateTexture(mask_texture_, nullptr, pixels.data(), tex_w * sizeof(uint32_t));
         SDL_SetTextureBlendMode(mask_texture_, SDL_BLENDMODE_MOD);
     }
 
     cached_mask_type_ = type;
-    cached_mask_w_ = game_w;
-    cached_mask_h_ = game_h;
+    cached_mask_w_ = dest_w;
+    cached_mask_h_ = dest_h;
+    cached_game_w_ = game_w;
+    cached_game_h_ = game_h;
     cached_mask_intensity_ = intensity;
 }
 
 void ScreenFilters::render_mask(SDL_Renderer* renderer, const SDL_Rect* viewport, int game_w, int game_h) {
     if (settings_.mask_type == ScreenMaskType::Off || !renderer || !viewport) return;
-    ensure_mask_texture(renderer, settings_.mask_type, game_w, game_h);
+    if (viewport->w <= 0 || viewport->h <= 0) return;
+
+    ensure_mask_texture(renderer, settings_.mask_type, viewport->w, viewport->h, game_w, game_h);
     if (!mask_texture_) return;
 
-    SDL_RenderCopy(renderer, mask_texture_, nullptr, viewport);
+    if (settings_.mask_type == ScreenMaskType::LcdGrid) {
+        // Pixel-aligned LCD grid is generated to exact viewport size
+        SDL_RenderCopy(renderer, mask_texture_, nullptr, viewport);
+    } else {
+        // Tiled repeating patterns: render tiles across the viewport
+        int tex_w = 0, tex_h = 0;
+        SDL_QueryTexture(mask_texture_, nullptr, nullptr, &tex_w, &tex_h);
+        if (tex_w <= 0 || tex_h <= 0) return;
+
+        // Tile repeating texture across the exact destination viewport
+        for (int y = viewport->y; y < viewport->y + viewport->h; y += tex_h) {
+            for (int x = viewport->x; x < viewport->x + viewport->w; x += tex_w) {
+                int cur_w = std::min(tex_w, (viewport->x + viewport->w) - x);
+                int cur_h = std::min(tex_h, (viewport->y + viewport->h) - y);
+                SDL_Rect src = { 0, 0, cur_w, cur_h };
+                SDL_Rect dst = { x, y, cur_w, cur_h };
+                SDL_RenderCopy(renderer, mask_texture_, &src, &dst);
+            }
+        }
+    }
 }
 
 } // namespace khcom

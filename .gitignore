@@ -7,6 +7,17 @@ cmake-build-*/
 .cache/
 recomp_cache/
 
+# Binary build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+overlay_toolchain/
+out.txt
+bios.cfg
+__pycache__/
+*.pyc
+
 # ROM and save files
 roms/*.gba
 roms/*.bin
@@ -22,6 +33,7 @@ third_party/temp/
 .vscode/
 .agents/
 scratch/
+prompts/
 RULES.md
 *.user
 *.suo

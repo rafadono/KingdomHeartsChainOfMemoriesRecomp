@@ -48,6 +48,8 @@ private:
     bool is_open_ = false;
     int scroll_offset_ = 0;
     int max_scroll_ = 0;
+    int cached_win_w_ = 1024;
+    int cached_bar_w_ = 400;
 
     std::vector<DialogueEntry> entries_;
 };

@@ -24,3 +24,59 @@ resize_view = true
 [audio]
 shadow = true
 
+[[extra_func]]
+addr = 0x02038738
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0203875A
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x03000000
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x03000060
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0300006E
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0300007A
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x03000098
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x030000AC
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x030000B8
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x03000380
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x0300038A
+mode = "thumb"
+
+[[extra_func]]
+addr = 0x03006C80
+mode = "arm"
+
+[[extra_func]]
+addr = 0x03006D50
+mode = "arm"
+
+[[extra_func]]
+addr = 0x03006D8C
+mode = "arm"
+
