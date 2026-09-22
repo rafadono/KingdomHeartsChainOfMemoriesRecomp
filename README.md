@@ -1,5 +1,7 @@
 # KHCOMRecomp — Kingdom Hearts: Chain of Memories (GBA) Static Recompilation
 
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Project-FF5E5B?style=flat&logo=kofi&logoColor=white)](https://ko-fi.com/rafadono)
+
 Native static recompilation of **Kingdom Hearts: Chain of Memories** for Game Boy Advance to modern PC platforms, built on the `gbarecomp` framework.
 
 ---
@@ -186,3 +188,12 @@ The resulting binary is generated at `build\Release\KHCOMRecomp.exe`.
 ```powershell
 .\build\Release\KHCOMRecomp.exe
 ```
+
+---
+
+## Support & Sponsorship
+
+If you enjoy this project and wish to support its continued development, you can support me on Ko-fi:
+
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/rafadono)
+
