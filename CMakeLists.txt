@@ -81,6 +81,29 @@ else()
     list(APPEND KHCOM_RUNTIME_SOURCES src/scaffold_stub.cpp)
 endif()
 
+# Suppress compiler warnings for machine-generated translation units
+set(GENERATED_SUPPRESS_FLAGS "")
+if(MSVC)
+    set(GENERATED_SUPPRESS_FLAGS "/w")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(GENERATED_SUPPRESS_FLAGS "-w")
+endif()
+
+if(GENERATED_SUPPRESS_FLAGS)
+    set_source_files_properties(
+        ${KHCOM_GENERATED_SOURCES}
+        PROPERTIES COMPILE_OPTIONS "${GENERATED_SUPPRESS_FLAGS}"
+    )
+    if(TARGET gbarecomp_runtime)
+        set_source_files_properties(
+            "${GBARECOMP_GENERATED_BIOS_DIR}/bios_dispatch_table.cpp"
+            "${GBARECOMP_GENERATED_BIOS_DIR}/bios_recompiled.cpp"
+            TARGET_DIRECTORY gbarecomp_runtime
+            PROPERTIES COMPILE_OPTIONS "${GENERATED_SUPPRESS_FLAGS}"
+        )
+    endif()
+endif()
+
 add_executable(KHCOMRecomp ${KHCOM_RUNTIME_SOURCES})
 target_include_directories(KHCOMRecomp PRIVATE
     src
