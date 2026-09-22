@@ -4,6 +4,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace khcom {
 

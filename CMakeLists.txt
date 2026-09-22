@@ -102,6 +102,9 @@ target_link_libraries(KHCOMRecomp PRIVATE
     gbarecomp_armv4t
     gbarecomp_gba
 )
+if(UNIX AND NOT APPLE)
+    target_link_libraries(KHCOMRecomp PRIVATE pthread dl m)
+endif()
 set_target_properties(KHCOMRecomp PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/lib/x64/SDL2.dll")
