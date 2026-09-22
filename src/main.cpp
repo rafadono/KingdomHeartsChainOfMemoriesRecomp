@@ -11,7 +11,11 @@
 
 int main(int argc, char** argv) {
     if (!std::getenv("GBARECOMP_RAM_OVERLAY_HEAL")) {
+#if defined(_WIN32)
         _putenv("GBARECOMP_RAM_OVERLAY_HEAL=1");
+#else
+        setenv("GBARECOMP_RAM_OVERLAY_HEAL", "1", 1);
+#endif
     }
     khcom_install_ram_dispatch();
     std::printf("%s Static Recompilation (KHCOMRecomp)\n", khcom::GAME_TITLE.data());
