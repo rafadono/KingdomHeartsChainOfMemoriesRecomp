@@ -96,12 +96,19 @@ if(COMMAND recomp_target_launcher_ui)
     recomp_target_launcher_ui(KHCOMRecomp CONSOLE gba)
 endif()
 
-target_link_libraries(KHCOMRecomp PRIVATE
-    gbarecomp_runtime
-    gbarecomp_debug
-    gbarecomp_armv4t
-    gbarecomp_gba
-)
+if(COMMAND target_link_gbarecomp_runtime_stack)
+    target_link_gbarecomp_runtime_stack(KHCOMRecomp)
+else()
+    if(APPLE OR MSVC)
+        target_link_libraries(KHCOMRecomp PRIVATE
+            gbarecomp_armv4t gbarecomp_gba gbarecomp_runtime gbarecomp_debug)
+    else()
+        target_link_libraries(KHCOMRecomp PRIVATE
+            -Wl,--start-group
+            gbarecomp_armv4t gbarecomp_gba gbarecomp_runtime gbarecomp_debug
+            -Wl,--end-group)
+    endif()
+endif()
 if(UNIX AND NOT APPLE)
     target_link_libraries(KHCOMRecomp PRIVATE pthread dl m)
 endif()
