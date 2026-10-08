@@ -348,45 +348,53 @@ void FontResizer::recompute_cache() {
             continue;
         }
 
-        float total_factor = scale_factor * density_factor;
-        int total_kerning = density_kerning + settings_.kerning_adjustment;
+        // For space character (ASCII 32)
+        if (i == 32) {
+            int sp_w = 4;
+            if (settings_.scale == FontScale::Micro55) sp_w = 2;
+            else if (settings_.scale == FontScale::Compact70) sp_w = 3;
+            else if (settings_.scale == FontScale::Medium85) sp_w = 3;
+            else sp_w = 4;
 
-        if (settings_.style == FontStyle::Authentic) {
-            if (settings_.scale == FontScale::Original100 &&
-                settings_.density == FontDensity::Original &&
-                settings_.kerning_adjustment == 0) {
-                font_width_cache_[i] = orig_w;
-            } else {
-                int sw = static_cast<int>(std::round(orig_w * total_factor)) + total_kerning;
-                font_width_cache_[i] = std::clamp(sw, 1, glyph_w_);
+            if (settings_.density == FontDensity::Compact || settings_.density == FontDensity::HighDensity) {
+                if (sp_w > 2) sp_w -= 1;
             }
-        } else if (settings_.style == FontStyle::Condensed) {
-            int sw = static_cast<int>(std::round(orig_w * total_factor)) - 1 + total_kerning;
-            font_width_cache_[i] = std::clamp(sw, 1, glyph_w_);
+            sp_w += settings_.kerning_adjustment;
+            font_width_cache_[i] = static_cast<uint16_t>(std::clamp(sp_w, 2, 8));
+            advance_table_[i] = static_cast<uint8_t>(font_width_cache_[i]);
+            continue;
+        }
+
+        // Safe visual width (foreground + drop shadow)
+        // In GBA ROM Latin font, each glyph has foreground width and shadow.
+        // The visual right edge is at most orig_w - 1 (or orig_w for wide glyphs).
+        // Advance width must NEVER be less than the visible glyph width, otherwise adjacent glyphs overlap!
+        int vis_w = (orig_w >= 3) ? (orig_w - 1) : orig_w;
+
+        int adv = orig_w;
+        if (settings_.density == FontDensity::Compact) {
+            // Tighter spacing: remove inter-glyph padding without overlapping visible pixels
+            adv = (orig_w >= 4) ? (orig_w - 1) : orig_w;
+        } else if (settings_.density == FontDensity::HighDensity) {
+            // High density: pack tightly against shadow boundary
+            adv = vis_w;
         } else {
-            // CleanModern: proportional widths based on clean typography
-            if (i >= 32 && i <= 126) {
-                if (i == 32) { // Space
-                    int sp_w = static_cast<int>(std::round(4.0f * total_factor)) + total_kerning;
-                    font_width_cache_[i] = std::clamp(sp_w, 2, 8);
-                } else {
-                    int min_c = 5, max_c = -1;
-                    for (int c = 0; c < 5; ++c) {
-                        if (kFont5x7[i - 32][c] != 0) {
-                            min_c = std::min(min_c, c);
-                            max_c = std::max(max_c, c);
-                        }
-                    }
-                    int col_w = (max_c >= min_c) ? (max_c - min_c + 1) : 3;
-                    int base_w = col_w + 1; // glyph width + spacing
-                    int sw = static_cast<int>(std::round(base_w * total_factor)) + total_kerning;
-                    font_width_cache_[i] = std::clamp(sw, 1, glyph_w_);
-                }
-            } else {
-                int sw = static_cast<int>(std::round(orig_w * total_factor)) + total_kerning;
-                font_width_cache_[i] = std::clamp(sw, 1, glyph_w_);
+            // Original: standard authentic spacing
+            adv = orig_w;
+        }
+
+        if (settings_.style == FontStyle::Condensed) {
+            // Condensed typography slightly tightens advance where safe
+            if (adv > vis_w) {
+                adv -= 1;
             }
         }
+
+        // Apply user kerning adjustment, but strictly enforce no overlapping pixels
+        adv += settings_.kerning_adjustment;
+        adv = std::clamp(adv, vis_w, glyph_w_);
+
+        font_width_cache_[i] = static_cast<uint16_t>(adv);
         advance_table_[i] = static_cast<uint8_t>(font_width_cache_[i]);
     }
 

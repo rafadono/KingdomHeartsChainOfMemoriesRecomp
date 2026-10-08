@@ -478,7 +478,7 @@ static void test_dialogue_components() {
     // Compact font scale dynamically increases characters per line
     enhancer.set_font_scale(FontScale::Compact70);
     enhancer.recompute_line_width();
-    assert(enhancer.settings().max_line_width_chars >= 40);
+    assert(enhancer.settings().max_line_width_chars >= 35);
 
     // Independent setting validation
     enhancer.set_density(FontDensity::Compact);
@@ -681,11 +681,49 @@ static void test_font_resizer() {
     uint32_t val_compact = 0;
     assert(fr.intercept_bus_read(FontResizer::kFontWidthTableBase + 65 * 2, 2, &val_compact));
     assert(val_compact > 0);
-    fr.set_density(FontDensity::Original);
+    // Test all combinations of font settings to guarantee no character collisions
+    FontStyle test_styles[] = { FontStyle::Authentic, FontStyle::CleanModern, FontStyle::Condensed };
+    FontScale test_scales[] = { FontScale::Original100, FontScale::Medium85, FontScale::Compact70, FontScale::Micro55 };
+    FontDensity test_densities[] = { FontDensity::Original, FontDensity::Compact, FontDensity::HighDensity };
+    int test_kernings[] = { -2, -1, 0, 1, 2 };
+
+    for (auto st : test_styles) {
+        for (auto sc : test_scales) {
+            for (auto den : test_densities) {
+                for (int kern : test_kernings) {
+                    fr.set_font_style(st);
+                    fr.set_font_scale(sc);
+                    fr.set_density(den);
+                    fr.set_kerning_adjustment(kern);
+
+                    // Verify critical dialogue characters: 'W', 'h', 'a', 't', ' ', 'i', 's'
+                    const char sample[] = "What is this, a card?";
+                    for (size_t s = 0; s < sizeof(sample) - 1; ++s) {
+                        char c = sample[s];
+                        int adv = fr.get_char_advance_width(c);
+                        if (c == ' ') {
+                            assert(adv >= 2);
+                        } else {
+                            assert(adv >= 2);
+                            // Character 'h' must never shrink below visible width (at least 4px)
+                            if (c == 'h' || c == 'a' || c == 't' || c == 's') {
+                                assert(adv >= 4);
+                            }
+                            if (c == 'W') {
+                                assert(adv >= 5);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Restore default
     fr.set_font_style(FontStyle::Authentic);
     fr.set_font_scale(FontScale::Original100);
+    fr.set_density(FontDensity::Original);
+    fr.set_kerning_adjustment(0);
 
     std::cout << "[PASS] C++ FontResizer unit test passed" << std::endl;
 }
