@@ -17,6 +17,10 @@ KHCOMRecomp
 overlay_toolchain/
 out.txt
 bios.cfg
+rom.cfg
+recomp_coverage*.json
+recomp_master_misses*.toml.frag
+hang_trace.csv
 __pycache__/
 *.pyc
 
