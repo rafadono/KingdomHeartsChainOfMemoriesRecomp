@@ -72,6 +72,13 @@ public:
     // Hook to intercept bus and ROM reads for font advance widths and glyph sprite tiles
     bool intercept_bus_read(uint32_t addr, uint32_t width, uint32_t* out_val);
 
+    // Checks if cutscene / movie subtitles are currently playing
+    bool is_movie_subtitle_active() const;
+
+    // Refreshes active text glyph tiles in GBA OBJ VRAM (0x06014000 - 0x06018000)
+    // so changes to font scale, typography, and density are visible immediately in real time
+    void refresh_vram_text_tiles();
+
     // Forces reloading authentic ROM tiles and recomputing cache
     void invalidate_cache();
 

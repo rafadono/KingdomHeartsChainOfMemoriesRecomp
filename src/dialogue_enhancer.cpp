@@ -5,6 +5,7 @@
 #include "cutscene_dialogue_data.inl"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <sstream>
 #include <vector>
 
@@ -61,16 +62,30 @@ static std::vector<uint16_t> rewrap_words_in_place(const std::vector<uint16_t>& 
     std::vector<uint16_t> out = in;
     if (!soft_wrap || out.empty() || max_line_len <= 0 || max_line_px <= 0) return out;
 
+    const int space_px = FontResizer::instance().get_char_advance_width(' ');
+    const size_t n = out.size();
+
     int cur_line_len = 0;
     int cur_line_px = 0;
-    int last_space_idx = -1;
-    const int space_px = FontResizer::instance().get_char_advance_width(' ');
+    size_t i = 0;
 
-    for (size_t i = 0; i < out.size(); ++i) {
+    while (i < n) {
         uint16_t w = out[i];
-        if (w == 0x000A) { // Newline
-            uint16_t prev_w = (i > 0) ? out[i - 1] : 0;
-            uint16_t next_w = (i + 1 < out.size()) ? out[i + 1] : 0;
+        if (w == 0 || w >= 0xE000) {
+            break;
+        }
+
+        if (w == 0x000A) { // Newline delimiter
+            size_t delim_start = i;
+            size_t newline_idx = i;
+            while (i < n && (out[i] == 0x000A || out[i] == 0x0020)) {
+                if (out[i] == 0x000A) newline_idx = i;
+                ++i;
+            }
+            if (i >= n || out[i] == 0 || out[i] >= 0xE000) break;
+
+            uint16_t prev_w = (delim_start > 0) ? out[delim_start - 1] : 0;
+            uint16_t next_w = out[i];
 
             bool is_sentence_terminator = (prev_w == '.' || prev_w == '!' || prev_w == '?' ||
                                            prev_w == ':' || prev_w == ';');
@@ -93,49 +108,72 @@ static std::vector<uint16_t> rewrap_words_in_place(const std::vector<uint16_t>& 
                 }
             }
 
-            // Measure next word length and pixel width
+            // Next word info
+            size_t word_start = i;
             int next_word_len = 0;
             int next_word_px = 0;
-            for (size_t j = i + 1; j < out.size(); ++j) {
-                if (out[j] == 0x000A || out[j] == 0x0020 || out[j] == 0 || out[j] >= 0xE000) break;
+            while (i < n && out[i] != 0x000A && out[i] != 0x0020 && out[i] != 0 && out[i] < 0xE000) {
                 ++next_word_len;
-                next_word_px += get_char_px_width(out[j]);
+                next_word_px += get_char_px_width(out[i]);
+                ++i;
             }
 
-            if (can_merge &&
-                (cur_line_len + 1 + next_word_len <= max_line_len) &&
-                (cur_line_px + space_px + next_word_px <= max_line_px)) {
-                out[i] = 0x0020; // Merge newline into space!
-                cur_line_len += 1;
-                cur_line_px += space_px;
-                last_space_idx = static_cast<int>(i);
+            // Word must fit on the current line to be merged
+            bool will_fit = (cur_line_len + 1 + next_word_len <= max_line_len) &&
+                            (cur_line_px + space_px + next_word_px <= max_line_px);
+
+            if (can_merge && will_fit) {
+                out[newline_idx] = 0x0020; // Merge into space
+                cur_line_len += 1 + next_word_len;
+                cur_line_px += space_px + next_word_px;
             } else {
-                cur_line_len = 0;
-                cur_line_px = 0;
-                last_space_idx = -1;
+                // Preserve newline!
+                out[newline_idx] = 0x000A;
+                cur_line_len = next_word_len;
+                cur_line_px = next_word_px;
             }
         } else if (w == 0x0020) {
-            last_space_idx = static_cast<int>(i);
-            ++cur_line_len;
-            cur_line_px += space_px;
-        } else if (w == 0 || w >= 0xE000) {
-            break;
+            size_t space_idx = i;
+            while (i < n && out[i] == 0x0020) ++i;
+            if (i >= n || out[i] == 0 || out[i] >= 0xE000) break;
+
+            if (out[i] == 0x000A) {
+                continue;
+            }
+
+            // Next word info
+            size_t word_start = i;
+            int next_word_len = 0;
+            int next_word_px = 0;
+            while (i < n && out[i] != 0x000A && out[i] != 0x0020 && out[i] != 0 && out[i] < 0xE000) {
+                ++next_word_len;
+                next_word_px += get_char_px_width(out[i]);
+                ++i;
+            }
+
+            if (cur_line_len > 0 &&
+                (cur_line_len + 1 + next_word_len > max_line_len || cur_line_px + space_px + next_word_px > max_line_px)) {
+                // Word exceeds line limit! Wrap at the space before this word!
+                // Word stays completely intact on the next line!
+                out[space_idx] = 0x000A;
+                cur_line_len = next_word_len;
+                cur_line_px = next_word_px;
+            } else {
+                // Word fits on current line
+                out[space_idx] = 0x0020;
+                cur_line_len += 1 + next_word_len;
+                cur_line_px += space_px + next_word_px;
+            }
         } else {
-            const int c_px = get_char_px_width(w);
-            ++cur_line_len;
-            cur_line_px += c_px;
-            if ((cur_line_len > max_line_len || cur_line_px > max_line_px) && last_space_idx != -1) {
-                out[last_space_idx] = 0x000A; // Wrap at last space
-                cur_line_len = 0;
-                cur_line_px = 0;
-                for (size_t k = last_space_idx + 1; k <= i; ++k) {
-                    ++cur_line_len;
-                    cur_line_px += get_char_px_width(out[k]);
-                }
-                last_space_idx = -1;
+            // First word at start of string
+            while (i < n && out[i] != 0x000A && out[i] != 0x0020 && out[i] != 0 && out[i] < 0xE000) {
+                ++cur_line_len;
+                cur_line_px += get_char_px_width(out[i]);
+                ++i;
             }
         }
     }
+
     return out;
 }
 
@@ -160,10 +198,10 @@ void DialogueEnhancer::recompute_line_width() {
 
     // 2. Calculate average character width dynamically based on active FontResizer metrics:
     float avg_char_w = FontResizer::instance().get_average_char_width();
-    if (avg_char_w < 2.0f) avg_char_w = 2.0f;
+    if (avg_char_w < 3.5f) avg_char_w = 3.5f;
 
     // 3. Dynamic max characters per line:
-    int dynamic_chars = static_cast<int>(settings_.max_line_width_px / avg_char_w);
+    int dynamic_chars = static_cast<int>(std::round(static_cast<float>(settings_.max_line_width_px + 2) / avg_char_w));
 
     // Fine-tune based on line capacity mode
     if (settings_.line_capacity == LineCapacityMode::Dense2Lines) {
@@ -172,7 +210,13 @@ void DialogueEnhancer::recompute_line_width() {
         dynamic_chars += 4;
     }
 
-    settings_.max_line_width_chars = std::clamp(dynamic_chars, 24, 80);
+    // Physical safety constraint:
+    // In standard GBA mode (no extra tiles), the physical text window limit is 152px,
+    // which corresponds to ~26-28 characters max. Exceeding 28 characters causes the GBA
+    // hardware engine to hard-wrap mid-word!
+    // In widescreen, capacity expands proportionally with the extra horizontal pixels.
+    int max_allowed_chars = (extra_tiles == 0) ? 28 : (28 + (extra_px * 4) / 15 + 4);
+    settings_.max_line_width_chars = std::clamp(dynamic_chars, 24, max_allowed_chars);
 }
 
 void DialogueEnhancer::set_density(FontDensity density) {
@@ -349,54 +393,104 @@ std::string DialogueEnhancer::process_dialogue_text(std::string_view raw_text) {
     recompute_line_width();
 
     std::string result;
-    result.reserve(raw_text.size());
+    result.reserve(raw_text.size() + 16);
 
-    int current_line_len = 0;
-    int current_line_px = 0;
     const int max_len = settings_.max_line_width_chars;
     const int max_px = settings_.max_line_width_px;
     const int space_px = FontResizer::instance().get_char_advance_width(' ');
 
-    for (size_t i = 0; i < raw_text.size(); ++i) {
-        char c = raw_text[i];
+    int cur_line_len = 0;
+    int cur_line_px = 0;
+    size_t i = 0;
+    const size_t n = raw_text.size();
 
-        if (c == '\n' || c == '\r') {
-            char prev = (i > 0) ? raw_text[i - 1] : ' ';
-            char next = (i + 1 < raw_text.size()) ? raw_text[i + 1] : ' ';
+    while (i < n) {
+        if (raw_text[i] == '\n' || raw_text[i] == '\r') {
+            size_t delim_start = i;
+            bool has_newline = false;
+            while (i < n && (raw_text[i] == '\n' || raw_text[i] == '\r' || raw_text[i] == ' ')) {
+                if (raw_text[i] == '\n' || raw_text[i] == '\r') has_newline = true;
+                ++i;
+            }
+            if (i >= n) break;
 
-            // Measure next word length and px width so we don't merge if next word exceeds limits
+            char prev_c = (delim_start > 0) ? raw_text[delim_start - 1] : ' ';
+            char next_c = raw_text[i];
+
+            // Next word
+            size_t word_start = i;
             int next_word_len = 0;
             int next_word_px = 0;
-            for (size_t j = i + 1; j < raw_text.size(); ++j) {
-                if (raw_text[j] == '\n' || raw_text[j] == '\r' || raw_text[j] == ' ') break;
+            while (i < n && raw_text[i] != '\n' && raw_text[i] != '\r' && raw_text[i] != ' ') {
                 ++next_word_len;
-                next_word_px += get_char_px_width(static_cast<uint8_t>(raw_text[j]));
+                next_word_px += get_char_px_width(static_cast<uint8_t>(raw_text[i]));
+                ++i;
             }
 
-            if (should_merge_newline(prev, next) &&
-                (current_line_len + 1 + next_word_len <= max_len) &&
-                (current_line_px + space_px + next_word_px <= max_px)) {
-                if (!result.empty() && result.back() != ' ') {
+            bool will_fit = (cur_line_len + 1 + next_word_len <= max_len) &&
+                            (cur_line_px + space_px + next_word_px <= max_px);
+
+            if (has_newline && should_merge_newline(prev_c, next_c) && will_fit) {
+                if (!result.empty() && result.back() != ' ' && result.back() != '\n') {
                     result.push_back(' ');
-                    ++current_line_len;
-                    current_line_px += space_px;
+                    cur_line_len += 1;
+                    cur_line_px += space_px;
                 }
             } else {
                 result.push_back('\n');
-                current_line_len = 0;
-                current_line_px = 0;
+                cur_line_len = 0;
+                cur_line_px = 0;
             }
-        } else {
-            result.push_back(c);
-            const int c_px = get_char_px_width(static_cast<uint8_t>(c));
-            ++current_line_len;
-            current_line_px += c_px;
 
-            if ((current_line_len >= max_len || current_line_px >= max_px) && c == ' ') {
-                result.back() = '\n';
-                current_line_len = 0;
-                current_line_px = 0;
+            result.append(raw_text.substr(word_start, next_word_len));
+            cur_line_len += next_word_len;
+            cur_line_px += next_word_px;
+        } else if (raw_text[i] == ' ') {
+            while (i < n && raw_text[i] == ' ') ++i;
+            if (i >= n) break;
+
+            if (raw_text[i] == '\n' || raw_text[i] == '\r') {
+                continue;
             }
+
+            // Next word
+            size_t word_start = i;
+            int next_word_len = 0;
+            int next_word_px = 0;
+            while (i < n && raw_text[i] != '\n' && raw_text[i] != '\r' && raw_text[i] != ' ') {
+                ++next_word_len;
+                next_word_px += get_char_px_width(static_cast<uint8_t>(raw_text[i]));
+                ++i;
+            }
+
+            if (cur_line_len > 0 &&
+                (cur_line_len + 1 + next_word_len > max_len || cur_line_px + space_px + next_word_px > max_px)) {
+                result.push_back('\n');
+                cur_line_len = next_word_len;
+                cur_line_px = next_word_px;
+            } else {
+                if (!result.empty() && result.back() != ' ' && result.back() != '\n') {
+                    result.push_back(' ');
+                    cur_line_len += 1;
+                    cur_line_px += space_px;
+                }
+                cur_line_len += next_word_len;
+                cur_line_px += next_word_px;
+            }
+            result.append(raw_text.substr(word_start, next_word_len));
+        } else {
+            // First word at start of string
+            size_t word_start = i;
+            int word_len = 0;
+            int word_px = 0;
+            while (i < n && raw_text[i] != '\n' && raw_text[i] != '\r' && raw_text[i] != ' ') {
+                ++word_len;
+                word_px += get_char_px_width(static_cast<uint8_t>(raw_text[i]));
+                ++i;
+            }
+            result.append(raw_text.substr(word_start, word_len));
+            cur_line_len += word_len;
+            cur_line_px += word_px;
         }
     }
 

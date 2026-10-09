@@ -293,6 +293,27 @@ static void test_hud_anchoring() {
     res = khcom_obj_attr_x_provider(3, hp_attr0, hp_attr1, hp_attr2, &out_x);
     assert(res == 1 && out_x == 20 - 40);
 
+    // 4b. Authentic Sora face portrait sprite (32x32 square, priority 1, x=1, y=-7 = 249 unsigned) -> SHIFT LEFT
+    uint16_t sora_attr0 = static_cast<uint16_t>((256 - 7) & 0xFF); // shape=00 (square), y=-7
+    uint16_t sora_attr1 = 1 | 0x8000;                              // size=10 (32x32), x=1
+    uint16_t sora_attr2 = 0x0400;                                  // priority=1
+    res = khcom_obj_attr_x_provider(7, sora_attr0, sora_attr1, sora_attr2, &out_x);
+    assert(res == 1 && out_x == 1 - 40);
+
+    // 4c. Authentic Sora face side piece (8x16 tall, priority 1, x=-6 = 506 unsigned, y=1) -> SHIFT LEFT
+    uint16_t sora_side_attr0 = 1 | 0x8000;                         // shape=10 (tall), y=1
+    uint16_t sora_side_attr1 = static_cast<uint16_t>((512 - 6) & 0x1FF) | 0x0000; // size=00 (8x16), x=-6
+    uint16_t sora_side_attr2 = 0x0400;                             // priority=1
+    res = khcom_obj_attr_x_provider(8, sora_side_attr0, sora_side_attr1, sora_side_attr2, &out_x);
+    assert(res == 1 && out_x == -6 - 40);
+
+    // 4d. Tutorial / Dialogue window frame piece (64x64 square, priority 0, x=15, y=10) -> MUST NOT DISPLACE
+    uint16_t win_attr0 = 10;                                       // shape=00, y=10
+    uint16_t win_attr1 = 15 | 0xC000;                              // size=11 (64x64), x=15
+    uint16_t win_attr2 = 0x0000;                                   // priority=0
+    res = khcom_obj_attr_x_provider(9, win_attr0, win_attr1, win_attr2, &out_x);
+    assert(res == 0);
+
     // 5. Authentic enemy HP gauge sprite at y=2, x=200 (horizontal 32x8, priority 1) -> SHIFT RIGHT
     uint16_t ehp_attr0 = 2 | 0x4000;
     uint16_t ehp_attr1 = 200 | 0x4000;
@@ -670,9 +691,41 @@ static void test_font_resizer() {
     assert(fr.intercept_bus_read(FontResizer::kFontWidthTableBase + 65 * 2, 2, &val_micro));
     assert(val_micro <= val);
 
-    // ROM sprite frame piece descriptors at 0x090CBFB2 must NEVER be intercepted!
-    uint32_t frame_val = 0;
-    assert(!fr.intercept_bus_read(FontResizer::kFontTilesBase + 65 * 128, 4, &frame_val));
+    // In Micro55, glyph tiles at 0x090CBFB2 ARE intercepted to supply scaled 4bpp tiles!
+    uint32_t scaled_tile_val = 0;
+    assert(fr.intercept_bus_read(FontResizer::kFontTilesBase + 65 * 128, 4, &scaled_tile_val));
+
+    // When reset to Authentic 100%, tiles pass through to authentic ROM
+    fr.set_font_scale(FontScale::Original100);
+    fr.set_font_style(FontStyle::Authentic);
+    uint32_t auth_tile_val = 0;
+    assert(!fr.intercept_bus_read(FontResizer::kFontTilesBase + 65 * 128, 4, &auth_tile_val));
+
+    // Verify movie subtitles (FMV cutscenes) are NEVER intercepted under any configuration,
+    // ensuring 100% authentic typography and exact centering over video frames.
+    fr.set_font_scale(FontScale::Micro55);
+    fr.set_font_style(FontStyle::Condensed);
+    fr.set_density(FontDensity::HighDensity);
+
+    g_cpu.R[15] = 0x0805E8B4u; // mode_movie_0
+    assert(fr.is_movie_subtitle_active());
+    uint32_t movie_val = 0;
+    assert(!fr.intercept_bus_read(FontResizer::kFontWidthTableBase + 65 * 2, 2, &movie_val));
+    assert(!fr.intercept_bus_read(FontResizer::kFontTilesBase + 65 * 128, 4, &movie_val));
+
+    g_cpu.R[15] = 0x0806CBACu; // CopyLatinGlyphsToVram
+    assert(fr.is_movie_subtitle_active());
+    assert(!fr.intercept_bus_read(FontResizer::kFontWidthTableBase + 65 * 2, 2, &movie_val));
+    assert(!fr.intercept_bus_read(FontResizer::kFontTilesBase + 65 * 128, 4, &movie_val));
+
+    g_cpu.R[15] = 0;
+    g_cpu.R[14] = 0;
+    assert(!fr.is_movie_subtitle_active());
+
+    // Restore test state
+    fr.set_font_scale(FontScale::Original100);
+    fr.set_font_style(FontStyle::Authentic);
+    fr.set_density(FontDensity::Original);
 
     // Test density and dynamic advance widths
     fr.set_density(FontDensity::Compact);

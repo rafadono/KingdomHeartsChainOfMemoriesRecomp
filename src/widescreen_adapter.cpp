@@ -251,20 +251,24 @@ int khcom_obj_attr_x_provider(int oam_index, uint16_t attr0, uint16_t attr1, uin
         // Dialogue text, message windows, and font glyphs must NEVER be displaced into margins.
         const bool is_16x16_square = (shape == 0x0000u) && (size == 0x4000u);
 
-        // Authentic player HP gauge sprites (btl_hpply.c):
-        // - Priority is strictly 1 (SPRITE_PRIORITY(1))
-        // - Top-left health bar region: sy in [0, 14], sx in [-16, 85]
-        // - None of the HP gauge sprites are 16x16 square (Sora face is 32x32, bar pieces are 32x8/32x16/16x8)
-        if (!is_16x16_square && priority == 1 && sx >= -16 && sx <= 85 && sy >= 0 && sy <= 14) {
+        // Authentic player HP gauge & face portrait sprites (btl_hpply.c):
+        // - HP bar, gauge outline, and Sora/Riku face portrait pieces all have Priority 1 (SPRITE_PRIORITY(1))
+        // - Region: sx in [-16, 85], sy in [-16, 24]
+        // - None of the HP gauge sprites are 16x16 square (Sora face is 32x32 + 8x16, bar pieces are 32x8/32x16)
+        // - Dialogue windows and tutorial boxes (event_message.c) strictly use Priority 0 and must NEVER be displaced.
+        const bool is_player_hp = !is_16x16_square &&
+            (priority == 1 && sx >= -16 && sx <= 85 && sy >= -16 && sy <= 24);
+
+        if (is_player_hp) {
             *out_x = sx - static_cast<int>(g_ws_extra_left);
             return 1;
         }
 
         // Authentic enemy HP gauge sprites (btl_hpenm.c):
         // - Priority is strictly 1 (SPRITE_PRIORITY(1))
-        // - Top-right health bar region: sy in [0, 14], sx in [160, 250]
+        // - Top-right health bar region: sy in [-16, 24], sx in [160, 250]
         // - Gauge pieces are horizontal (32x8 / 32x16)
-        if (!is_16x16_square && priority == 1 && sx >= 160 && sx <= 250 && sy >= 0 && sy <= 14) {
+        if (!is_16x16_square && priority == 1 && sx >= 160 && sx <= 250 && sy >= -16 && sy <= 24) {
             *out_x = sx + static_cast<int>(g_ws_extra_right);
             return 1;
         }
