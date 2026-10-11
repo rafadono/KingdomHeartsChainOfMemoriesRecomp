@@ -14,7 +14,7 @@ Run everything from the repository root. The generic recompilation helpers (cont
 | `overlay_png_to_ppm.py` | Converts a capture PNG (8-bit RGB/RGBA) to the PPM background of `overlay_dump` | `python tools/overlay_png_to_ppm.py in.png out.ppm` |
 | `gen_font_data.py` | Regenerates the embedded font C arrays (stdout) | `python tools/gen_font_data.py [--extra] subset1.ttf ... > file.cpp`, details in [../third_party/fonts/README.md](../third_party/fonts/README.md) |
 | `update_symbols.py` | Merges a few seed symbols and `symbols/task_mode_symbols.txt` into `symbols/imported_symbols.tsv` | `python tools/update_symbols.py` |
-| `import_decomp_symbols.py` | Imports function names from a matching decompilation build (`symbols/khcom_syms.txt`, `khcom_sections.txt`, `khcom.map`) through `gbarecomp/tools/symbol_import` | `python tools/import_decomp_symbols.py [path\to\rom.gba]` (default ROM `roms/B8CE.gba`), see [../symbols/README.md](../symbols/README.md) |
+| `import_decomp_symbols.py` | Imports function names from a matching decompilation build (`symbols/khcom_syms.txt`, `khcom_sections.txt`, `khcom.map`) through `gbarecomp/tools/symbol_import` | `python tools/import_decomp_symbols.py [path\to\rom.gba]` (default ROM `roms/B8CE.gba`) |
 | `dialogue_text_tool.py` | Offline dialogue-script helper: extract tables from the ROM to JSON, re-wrap to a character width, compile back to a binary blob. Not used by the game at run time | `python tools/dialogue_text_tool.py extract --rom ROM [--out json]` / `recalculate-wrap --in json --out json [--width N]` / `compile --in json --out blob` |
 
 Related test scripts (not tools): `tests/test_runtime_functions.py` (schema and algorithm checks), `tests/verify_mp2k_audio.py` and `tests/benchmark_performance.py`

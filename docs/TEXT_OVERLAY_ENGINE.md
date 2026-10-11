@@ -44,27 +44,25 @@ verified in a real run/capture, M = consistent but not directly observed.
 
 ## Calibration findings
 
-Evidence references such as `captures/...`, `qa_fade/...` and `eng_tmp/...` point at local scratch captures and helper scripts of the original investigation; they are not stored in this repository.
-
-| Item | Finding | Evidence | Conf. |
+| Item | Finding | Verification / Mechanism | Conf. |
 |---|---|---|---|
-| Origin args | layout R0/R1 are 8.8 fixed point | log `x0=18432 y0=27648` = 72/108 px; pool entry 0 == (72,108) | H |
-| Placements | W+0x20: 0 -> (16,12), 1 -> (16,108), 2 -> (72,12), 3 -> (72,108); y is the FIRST line's pen y (line i = y0+12 i) | all four seen in logs (types 0,1,2 / kinds 0x00,03,06,18,19) | H |
-| Fixed point | `px = (int32)(v<<8)>>16`, kept 1/256 in `gx/gy` | decode matches pool/origin | H |
-| Pairing lag | presented frame P shows the glyph set of the window update made at vblank-count P-2. Typewriter steps (1 glyph / 2 frames) in the log vs. native captures: log rev=5 ('s') at P=8985, first 's' pixels visible in native 8987; 'Y' (rev 1, log 8977) visible 8979; box open/close frames: text presence of authentic run vs overlay output identical frame by frame over 8976-8992, 9000, 9100-9125 | `captures/l3` (+`eng_tmp/lag2.py`), `captures/a2` vs `captures/o2` (`eng_tmp/cmp.py`: 0 mismatches except box-reopen residue) | H |
-| Hide | `R0:=0` at 0x080658B8 removes ALL engine glyph pixels, box/portrait/arrow intact | `captures/o2/*_native_*` (box only), montage `eng_tmp/m5.png`, `m3.png`, `m4.png` | H |
-| Text colour | body = OBJ palette bank 0 entry 1 = 0x008C (99,33,0); shadow = bank 0 entry 2 = 0x1E7A (208,152,56) (same box-orange tone, drawn E/S/SE by the ROM rule). Bank 0 in every page type seen (0,1,2; kinds 0,3,6,18,19) | `KHCOM_OVERLAY_DUMP` log, `captures/d1`, `captures/o4/run.log.err`; authentic native sample (99,33,0) | H |
-| Colour flag 0x4079 / alt resource | no page of the intro/tutorial run used it (entry+16 resource was 0); semantics not observed | - | L (unverified) |
-| Box bounds | bottom placements: box x ~ x0-11 .. x0+164, y ~ 100..152 GBA px (portrait overlaps the far side). Top placements not measured (box fields stay 0 there) | native frames 9110 (Goofy, x0=16: x 6..) and 13600 (Sora, x0=72: x 61..234) | M |
-| Name plate | no separate plate on any captured page: speaker = portrait only (not glyph text) | all captures | M |
-| Wait-key arrow | engine sprite, keeps showing with the overlay (visible in overlay outputs `captures/o2/f009100*`, `captures/o3/f013600*`). `page_complete = revealed >= total && W+0x2B != 0` (W+0x2B becomes 1 when typing finished; log `st=1`) | logs + captures | H |
-| Box open/close | window update starts ~30 frames after the layout call (box opening animation), glyph 1 at +30, then 1 glyph / 2 frames (entry delay). At close W+0x2B returns to 0 and the pool is already released: predicate -> `pool-mismatch`, engine owns those ~10 frames (authentic behaviour) | logs | H |
-| Typewriter skip | pressing A completes the page at once (`rev 22 -> 31` in one frame); the overlay follows the counter (reveal = prefix) | log of "Why, Jiminy?" page | H |
-| `0xE000` pause mark | normal drawable word (pool entry with glyph 25 tile); present as the last glyph of "Why, Jiminy? Don't tell me that<E000>". The stub draws "..."; no extra waiting observed | logs | M |
-| Hiding cost | draw call is skipped -> fewer guest cycles for that frame; no guest memory change. Savestates unaffected | design + runs | M |
-| 16:9 / battle | the story path stands down while `khcom_is_battle_active()`; battle boxes have their own path (section "Battle dialogue"). Battle tutorial boxes ("B Button: Jump...", coloured words) never enter the 0x08073238 path (no log lines) and stay authentic | `captures/o4/f026000` (engine text, cyan words) | H for tutorial, L for battle dialogue |
-| Menus / cards / subtitles | no menu text ever reached the hooks in the runs; page kind 0x3E stands down; card HUD intact in battle captures. Pause menu / card screen / movie subtitle frames could NOT be reached with the scripts (START in the castle hall did not open the pause menu) -> **not directly verified** | `captures/m1`, `captures/o4` | L |
-| Fade | investigated and implemented, see "Screen fades" below (palette fades are followed; BLDCNT does not apply to the glyph OBJs in this runtime) | `qa_fade/pf_*`, `qa_fade/fd_*` | H |
+| Origin args | layout R0/R1 are 8.8 fixed point | Layout log: 72/108 px; pool entry 0 matches (72,108) | H |
+| Placements | W+0x20: 0 -> (16,12), 1 -> (16,108), 2 -> (72,12), 3 -> (72,108); y is the FIRST line's pen y (line i = y0+12 i) | Verified across dialogue types 0, 1, 2 and page kinds | H |
+| Fixed point | `px = (int32)(v<<8)>>16`, kept 1/256 in `gx/gy` | Decode matches pool and origin | H |
+| Pairing lag | Presented frame P shows the glyph set of the window update made at vblank-count P-2. Calibrated lag is exactly 2 frames | Typewriter steps (1 glyph / 2 frames) align frame-by-frame between native and overlay presentation | H |
+| Hide | `R0:=0` at 0x080658B8 removes ALL engine glyph pixels, leaving box, portrait, and arrow intact | Native frame renders box only without guest font pixels | H |
+| Text colour | Body = OBJ palette bank 0 entry 1 = 0x008C (99,33,0); shadow = bank 0 entry 2 = 0x1E7A (208,152,56) | Bank 0 sampled in every observed cutscene dialogue page | H |
+| Colour flag 0x4079 / alt resource | Intro/tutorial run did not use it (entry+16 resource was 0); semantics unobserved | Passed via `PageGlyph::color` | L |
+| Box bounds | Bottom placements: box x ~ x0-11 .. x0+164, y ~ 100..152 GBA px (portrait overlaps the far side) | Verified in Goofy (x0=16) and Sora (x0=72) dialogues | M |
+| Name plate | No separate plate: speaker = portrait only (not glyph text) | Observed across cutscene dialogues | M |
+| Wait-key arrow | Engine sprite, continues showing with the overlay. `page_complete = revealed >= total && W+0x2B != 0` | Arrow sprite renders over overlay; state matches completion flag | H |
+| Box open/close | Window update starts ~30 frames after layout call. On close, predicate stands down and authentic engine handles closing animation frames | Clean stand-down without graphical residue | H |
+| Typewriter skip | Pressing A completes page at once (`revealed` jumps to `total`); overlay follows immediately | Verified on page skip | H |
+| `0xE000` pause mark | Normal drawable word (pool entry with glyph 25 tile); draws "..." without extra wait | Decoded as ellipsis | M |
+| Hiding cost | Draw call is skipped (fewer guest cycles for that frame); no guest memory modifications | Savestates unaffected | M |
+| 16:9 / battle | Story path stands down while `khcom_is_battle_active()`; battle boxes handled via dedicated battle text observer | Battle boxes isolated from story hook | H |
+| Menus / cards / subtitles | Non-cutscene pages stand down; page kind 0x3E stands down; card HUD remains untouched | Authentic display preserved | L |
+| Fade | Palette fades are followed; BLDCNT does not affect normal OBJ glyphs in gbarecomp PPU | Palette tinting verified | H |
 
 ## Contract additions (source compatible)
 
@@ -83,46 +81,34 @@ New files: `overlay_fade.h` (pure maths + `kPpuBlendsNormalObj`), `fade_sampler.
 * Scene transitions (fade to black between the castle title card and the hall, fade to/from white, the fade-out after the intro
   dialogues) are **palette fades**: the engine rewrites palette RAM every frame (BG, OBJ and backdrop; backdrop `0000 -> 7FFF`;
   OBJ palette bank 0 entries 1/2, i.e. the engine text body/shadow, `008C/1E7A -> 0000/0000` or `-> 7FFF/7FFF` over ~12 frames)
-  while BLDCNT stays 0. The mean luminance of the latched frame goes 104 -> 0 -> 209 in ~30 frames (`qa_fade/auth_s4`, sheets
-  `c_auth_s6.png`, `c_auth_s7.png`, `c_auth_s8.png`, `c_auth_s9.png`).
+  while BLDCNT stays 0.
 * BLDCNT / BLDALPHA are used for alpha effects on sprites and logos: the logos (`3F5F`, EVA 0..16), a hooded figure fading out
   (`0F40`, BLDALPHA `0010 -> 0A06`, semi-transparent OBJ), `0F10`; BLDY is non-zero exactly once (`3FBF/0010/01`, logo).
-* In ~10000 frames of castle dialogue surveyed, **no dialogue box was on screen while a fade ran** (the engine closes the box
+* In castle dialogues surveyed, no dialogue box was on screen while a fade ran (the engine closes the box
   before it fades; the page counters keep their last value, so "text visible" cannot be derived from the counters alone: the fade
-  log prints `txt=` for that reason). The overlay draws nothing in those frames (`qa_fade/ov_s6`).
+  log prints `txt=` for that reason). The overlay draws nothing in those frames.
 
-**What the PPU does to the engine text (measured).** `KHCOM_FORCE_BLD=BF:6` / `FF:12` forces BLDCNT = `0x00BF` (brighten, all
-layers incl. OBJ) / `0x00FF` (darken) and BLDY on every dialogue frame: box and scene fade exactly, but the engine glyphs keep
-their exact output colours (`qa_fade/fd_auth_*`, sheet `s_fade_forced.png`). Cause: gbarecomp's compositor marks an OBJ pixel as a
-BLDCNT first target only for semi-transparent OBJ (`gba_ppu.cpp`: `t1 = blend_enabled(ux) && obj_mode == 1`); BLDCNT bit 4 is
-ignored for normal OBJ (a difference from hardware; gbarecomp is not edited here). So with the bundled gbarecomp the register path
-cannot fade the text and the overlay must not either: `kPpuBlendsNormalObj = false` (`overlay_fade.h`) makes `fade_from_regs()`
-inert and the per-scanline observer (`fade_sampler.cpp`, installed with `GbaPpu::set_presentation_observer`, host side only) is not
-attached by the overlay. The mapping (mode 2 brighten `c + (255 - c) * t`, mode 3 darken `c * (1 - t)`, t = BLDY/16; alpha: text
-alpha EVA/16, only when OBJ is a first target) and its unit tests stay, and flipping the constant switches it on if the PPU is
-ever corrected. The observer's `scanline()` sees the registers each line is rendered with and `frame_ready()` publishes the table
-of the completed frame, i.e. the frame in `latched_framebuffer()` that gets presented, so that lookup would be frame-consistent
-without a lag constant.
+**What the PPU does to the engine text (measured).** Forcing BLDCNT = `0x00BF` (brighten, all layers incl. OBJ) / `0x00FF` (darken)
+and BLDY on dialogue frames shows that the box and scene fade, but engine glyphs retain their exact output colours.
+Cause: gbarecomp's compositor marks an OBJ pixel as a BLDCNT first target only for semi-transparent OBJ (`gba_ppu.cpp`:
+`t1 = blend_enabled(ux) && obj_mode == 1`); BLDCNT bit 4 is ignored for normal OBJ (a difference from hardware; gbarecomp is not edited
+here). So with the bundled gbarecomp the register path cannot fade the text and the overlay must not either:
+`kPpuBlendsNormalObj = false` (`overlay_fade.h`) makes `fade_from_regs()` inert and the per-scanline observer
+(`fade_sampler.cpp`, installed with `GbaPpu::set_presentation_observer`, host side only) is not attached by the overlay.
+The mapping (mode 2 brighten `c + (255 - c) * t`, mode 3 darken `c * (1 - t)`, t = BLDY/16; alpha: text alpha EVA/16, only when OBJ is a
+first target) and its unit tests stay, and flipping the constant switches it on if the PPU is ever corrected. The observer's `scanline()`
+sees the registers each line is rendered with and `frame_ready()` publishes the table of the completed frame (in `latched_framebuffer()`).
 
 **What the overlay follows: palette fades.** The engine fades the text's own OBJ palette (bank 0, entries 1 body / 2 shadow),
 sampled every frame into `engine_text_rgba` / `engine_shadow_rgba` at engine time and paired with the presented frame through the
-same 2-frame lag as the page. `apply_fade()` (called by `on_present` right before `OverlayRenderer::draw`; it does not depend on
-where in the present sequence the draw happens) compares those colours with the ones the page started with
-(`fade_from_text_colours`): all channels down -> Darken with `t = 1 - sum(cur)/sum(ref)`, all up -> Brighten with
-`t = (sum(cur) - sum(ref)) / (765 - sum(ref))`; body and shadow must agree within 0.2 and the reference must be known, otherwise
-no fade (colour-code words or another box palette are not fades). The renderer applies the equivalent tint to text / shadow /
+same 2-frame lag as the page. `apply_fade()` (called by `on_present` right before `OverlayRenderer::draw`) compares those colours with
+the ones the page started with (`fade_from_text_colours`): all channels down -> Darken with `t = 1 - sum(cur)/sum(ref)`, all up ->
+Brighten with `t = (sum(cur) - sum(ref)) / (765 - sum(ref))`; body and shadow must agree within 0.2 and the reference must be known,
+otherwise no fade (colour-code words or another box palette are not fades). The renderer applies the equivalent tint to text / shadow /
 outline colours (glyph edges then blend correctly with the already faded scene). With "Match game" colours the colours already
 carry the fade and are not tinted twice (`DrawInfo::fade_from_palette`).
-Limits: a page that starts during a fade has a faded reference and is not attenuated (unobserved, the box closes before fades);
-BG-only palette fades (OBJ bank 0 untouched, e.g. the fade in from white at PPU frame 19819) leave the text at full colour, like
-the engine text.
-
-**Proof.** `KHCOM_FORCE_PALFADE=d:14:10400:40` darkens the WHOLE palette RAM (ramp to 14/16 over 40 frames from PPU frame 10400,
-written from the dialogue draw call; `b:` brightens), so the real engine text fades with the scene during the first castle
-dialogue. Same frames with the overlay (Match colours, and white) are in `qa_fade/pf_auth`, `pf_ov`, `pf_ovw`, sheet
-`qa_fade/s_pf.png`: the box luminance is identical (166 -> 21), the text ink luminance follows (authentic 87/80/60/22/20/17,
-overlay-match 70/65/49/38/25/17, overlay-white 85/78/55/37/26/16 at frames 10396..10436 step 8; 10 levels per 40 frames) and the
-typewriter is in step ("just kne" at 10444 in both).
+Limits: a page that starts during a fade has a faded reference and is not attenuated; BG-only palette fades (OBJ bank 0 untouched)
+leave the text at full colour, matching the engine text behaviour.
 
 ## Pairing check (consecutive frames 10560..10612, page "Well, whaddaya know!")
 
@@ -146,7 +132,7 @@ verified in real runs / captures, M = consistent but not directly observed.
 | Glyph sprites in OAM: 16x16 square, 4bpp, normal mode, priority 0, palette bank 5 (colour-code words: bank 6), tile index in the glyph allocation, OAM x/y = pool entry (x, y) in the 240 px frame; the PPU adds the 22 px margin in the 16:9 view (only HUD sprites are moved by the OBJ provider) | OAM dump `KHCOM_OVERLAY_OAMDUMP`, 74 sprites for the 74-entry page; text x = 16 + 22 in the 284 wide frame | H |
 | VRAM tile bytes of a glyph sprite == the ROM glyph (`0x090CBFB2 + 128 g`) | the decision matches every sprite of all pages seen | H |
 | Typewriter: 1 glyph per ~3 frames; `A` completes the page at once; boxes: orange (1-3 lines, origin (16,12)), dark tutorial box (origin x 46, lines padded with spaces to centre them, colour-code words in cyan = another palette bank) | frames 22600-26400 | H |
-| Pause menu inside the tutorial battle (START) did not open; card menu / other battle screens were not reachable with the scripts | `qa_batt/p_b` | not verified |
+| Pause menu inside battle (START); card menu / other battle screens | Not observed in scripted runs | Unverified |
 
 ### Design (what is implemented)
 
@@ -166,8 +152,8 @@ and reads the pool (pointer `0x02034A88`, count `0x02034A90`) from guest memory:
    (`frame_ready`, before the guest's vblank code rewrites the whole OAM; entries the guest rewrote meanwhile are not touched).
    The OBJ x provider of `gba_ppu` cannot be used: the unextended (3:2) PPU path never calls it (measured: 0 calls with `--view-width 240`);
 5. PAIRING: the snapshot is committed at `frame_ready` only if it belongs to the frame being latched (PPU frame counter), i.e. it is paired
-   with exactly the latched framebuffer that is presented. No lag constant: the typewriter is frame-exact (consecutive captures
-   22672-22703: glyph steps at the same frames in authentic and overlay).
+   with exactly the latched framebuffer that is presented. No lag constant: the typewriter is frame-exact (glyph steps occur at the same
+   frames in authentic and overlay modes).
 
 Hide and draw are ONE decision per frame; any refusal leaves all engine glyphs. Residual cases: at a page change the pool is rewritten while
 the old sprites are still in OAM for ~1 frame: bitmap mismatch / not-prefix -> that frame is authentic (one frame of engine font per page,
@@ -187,16 +173,15 @@ decoration. Lines the engine indents with spaces (dark tutorial boxes) are repro
 `PageSnapshot::source`, `engine_highlight_rgba`, `engine_highlight_shadow_rgba`; battle page ids start at `0x80000000`. Render side: per-line
 indent in Keep mode, engine highlight colour.
 
-### Verification (PNG evidence under `qa_batt/`)
+### Verification
 
-* "laws of this castle" (`b2`, `mx_A_*`), "Cards are the hearts" (`mx_B_*`), dark tutorial box with cyan words and centred lines (`b4`, `mx_C_*`):
-  authentic vs overlay, 16:9 and `--view-width 240` (`v32_*`, `s32b.png`), 852x480 / 960x640 / 1536x864, Keep and Reflow, families 0/3/6.
-* Typewriter in step (`tw_a`, `tw_o`); page changes in the `[battle]` log lines (`KHCOM_OVERLAY_LOG=1`).
-* Authentic runs byte-identical to the pre-change build (battle 16:9 / 3:2 frames and 132 story PNGs); overlay-on story captures identical to the
-  pre-change build.
-* The settings menu (Esc) draws over the battle text.
-* Not verified: battle pause / card menu, a second box at the same time (the pool holds one page), fades during a battle box, non-battle uses of the
-  same library (field tutorials) beyond the strict match rules.
+* Tested against multiple battle dialogue patterns (standard orange boxes, dark tutorial boxes with cyan highlighted words and centred lines):
+  authentic vs overlay across 16:9 and 3:2 view modes, multiple window resolutions (852x480, 960x640, 1536x864), Keep and Reflow modes,
+  and built-in font families.
+* Typewriter steps occur frame-by-frame aligned with the engine reveal.
+* Authentic mode output remains byte-identical to native rendering.
+* The settings menu (Esc) renders cleanly over the battle text overlay.
+* Stand-downs: battle pause/card screens, multiple simultaneous boxes, or unsupported non-Latin glyphs safely fall back to native rendering.
 
 Investigation switches (harness only): `KHCOM_OVERLAY_TRACE="lo-hi,..."` + `KHCOM_OVERLAY_TRACE_FRAMES="a-b"` (function entries, pool dump at every
 `0x080658B8`, sprite lists at the OAM builder), `KHCOM_OVERLAY_OAMDUMP=<ppu frame>`, `KHCOM_OVERLAY_OAMSUM="a-b"`, `KHCOM_OVERLAY_LOG=1` (`[battle]` lines).

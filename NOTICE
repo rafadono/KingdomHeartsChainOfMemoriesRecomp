@@ -35,5 +35,5 @@ Embedded in the executable (HD dialogue text overlay)
   Public domain (Sean Barrett / RAD Game Tools). Dual licensed MIT / public domain per the header.
 
 Data and symbol sources
-* Function names in symbols/ can be imported from the matching decompilation project (pheenoh/khcom) with tools/import_decomp_symbols.py;
-  see symbols/README.md. The raw dumps (symbols/*_readelf_*.txt, *.map, *.elf) are git-ignored.
+* Function names in symbols/ can be imported from the matching decompilation project (pheenoh/khcom) with tools/import_decomp_symbols.py.
+  The raw dumps (symbols/*_readelf_*.txt, *.map, *.elf) are git-ignored.
