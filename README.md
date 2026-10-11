@@ -153,12 +153,13 @@ actors waiting off-stage and stretched UI). Details: `src/widescreen_adapter.h` 
 
 - **Original text mode (default)**: the game draws its own dialogue text untouched (font, size, line breaks, typewriter cadence).
   There is no in-engine text enhancement any more.
-- **HD text overlay** (menu *Dialogue Text (HD)*, `hdtext_enabled`, off by default): the engine text of cutscene dialogue is hidden and
-  the same page is drawn at output resolution, following the typewriter reveal and screen fades. Options: font family (8 built-in OFL
-  families plus any `.ttf` in a `fonts/` folder), size, line and letter spacing, wrapping (*Keep engine line breaks* / *Reflow to the text
-  box*), style (plain / drop shadow / outline), colours including *Match game*, opacity, box padding, auto-fit with a minimum size. It stands down
-  (the original text shows) on battles, menus and anything it cannot reproduce exactly. The overlay is drawn right after the game image, so the
-  settings menu stays on top. See [docs/TEXT_OVERLAY_ENGINE.md](docs/TEXT_OVERLAY_ENGINE.md) and [docs/TEXT_OVERLAY_RENDER.md](docs/TEXT_OVERLAY_RENDER.md).
+- **HD text overlay** (menu *Dialogue Text (HD)*, `hdtext_enabled`, off by default): the engine text of cutscene dialogue and
+  in-battle dialogue boxes (via a dedicated OAM presentation observer) is hidden and the same page is drawn at output resolution,
+  following the typewriter reveal and screen fades. Options: font family (8 built-in OFL families plus any `.ttf` in a `fonts/` folder),
+  size, line and letter spacing, wrapping (*Keep engine line breaks* / *Reflow to the text box*), style (plain / drop shadow / outline),
+  colours including *Match game*, opacity, box padding, auto-fit with a minimum size. It stands down (the authentic text shows) on menus
+  and anything it cannot reproduce exactly. The overlay is drawn right after the game image, so the settings menu stays on top. See
+  [docs/TEXT_OVERLAY_ENGINE.md](docs/TEXT_OVERLAY_ENGINE.md) and [docs/TEXT_OVERLAY_RENDER.md](docs/TEXT_OVERLAY_RENDER.md).
 - **Conversation log (backlog)**: `F2` or the gamepad Back/Select button opens a left-docked sidebar with the dialogue seen so far; the game
   pauses while it is open. Scroll with the mouse wheel, arrows, Page Up/Down or the D-pad; close with `Escape`, `F2` or gamepad `B`.
 - **Turbo dialog**: hold `Tab` (gamepad `Y`) to advance text quickly.
@@ -199,6 +200,16 @@ not fall back to interpretation.
 
 ---
 
+## Support
+
+If you enjoy the project and want to support its ongoing development:
+
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Project-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/rafadono)
+
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/rafadono)
+
+---
+
 ## Developer tooling
 
 An index of every script is in [tools/README.md](tools/README.md).
@@ -220,9 +231,3 @@ An index of every script is in [tools/README.md](tools/README.md).
 - `external/gba-improvements`: MIT. `external/recomp-ui`: MIT (bundles Dear ImGui, see its own files). SDL2: zlib (downloaded, not committed).
 - Embedded fonts (SIL OFL 1.1) and `stb_truetype` (public domain / MIT): see [NOTICE](NOTICE) and [third_party/fonts/README.md](third_party/fonts/README.md).
 - No ROM, BIOS or music files are included. Kingdom Hearts is a trademark of its owners; this is an independent fan project.
-
-## Support
-
-If you enjoy the project you can support its development on Ko-fi:
-
-[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/rafadono)

@@ -61,9 +61,11 @@ the wide picture is presented. There is no cached state, so mode switches and sa
 ### HD dialogue text overlay
 Settings: `overlay::settings()` (`hdtext_*`). Engine side `text_overlay/engine_hooks.cpp` (installed in the function-entry chain only while the overlay is
 enabled): captures the dialogue window state once per frame into a `PageSnapshot` (`overlay_types.h`), evaluates a stand-down predicate, and when the overlay owns the
-text makes the engine's glyph draw submit nothing. At `RenderCopy` it hands the snapshot of the presented frame (2-frame pairing lag) to the render side:
+text makes the engine's glyph draw submit nothing. In-battle dialogue boxes use a dedicated observer path (`src/text_overlay/battle_text.{h,cpp}`): a PPU presentation observer
+decodes OAM glyph sprites, disables their rendering for the matched frame, and commits the snapshot at frame latch. At `RenderCopy` it hands the snapshot of the presented frame (2-frame pairing lag for cutscenes, frame-latched for battle) to the render side:
 `overlay_layout` (wrap, auto-fit, placement), `overlay_raster` + `overlay_fonts` (stb_truetype glyphs, shadow/outline), `overlay_renderer` (atlas, drawing),
 `fade_sampler` + `overlay_fade.h` (follows palette fades). Details: [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md), [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md).
+
 
 ### Audio
 gbarecomp opens a mono S16 65536 Hz SDL device with a pull callback. `khcom_open_audio_device_intercept` forwards to `gbaimp::open_audio_device_processed`, which wraps the
