@@ -308,6 +308,17 @@ void pop_runtime_style() {
     ImGui::PopStyleVar(7);
 }
 
+// Keeps part of the window header on screen so the menu can always be grabbed again.
+ImVec2 clamp_window_pos(ImVec2 pos, ImVec2 size, ImVec2 display) {
+    const float keep_x = std::min(160.0f, size.x);
+    const float keep_y = 40.0f;
+    const float min_x = keep_x - size.x;
+    const float max_x = std::max(display.x - keep_x, min_x);
+    pos.x = std::clamp(pos.x, min_x, max_x);
+    pos.y = std::clamp(pos.y, 0.0f, std::max(display.y - keep_y, 0.0f));
+    return pos;
+}
+
 } // namespace
 
 extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
@@ -349,8 +360,22 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
                              ? display.y - margin * 2.0f
                              : max_height;
     const bool wide = width >= (touch_friendly ? 900.0f : 640.0f);
-    ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+    // The window is centered until the user drags its header; the chosen position is kept
+    // while the process runs so the menu can be parked where it does not hide the game.
+    // A window/display resize or touch-friendly mode goes back to the centered layout.
+    static ImVec2 s_window_pos = ImVec2(0.0f, 0.0f);
+    static ImVec2 s_window_display = ImVec2(0.0f, 0.0f);
+    static bool s_window_moved = false;
+    const bool display_changed =
+        s_window_display.x != display.x || s_window_display.y != display.y;
+    if (display_changed || touch_friendly) s_window_moved = false;
+    s_window_display = display;
+    if (!s_window_moved) {
+        s_window_pos = ImVec2((display.x - width) * 0.5f, (display.y - height) * 0.5f);
+    }
+    s_window_pos = clamp_window_pos(s_window_pos, ImVec2(width, height), display);
+    ImGui::SetNextWindowPos(s_window_pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
 
     push_runtime_style(theme, touch_friendly);
@@ -369,6 +394,28 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
             const float font_scale =
                 std::clamp(target_font_px / base_font_px, 1.0f, 4.0f);
             ImGui::SetWindowFontScale(font_scale);
+        }
+        // Drag handle over the header row: drag with the mouse to move the menu,
+        // double-click to center it again. Not offered in touch-friendly mode, where the
+        // menu fills the screen, and skipped by gamepad/keyboard navigation.
+        const ImVec2 header_cursor = ImGui::GetCursorPos();
+        if (!touch_friendly) {
+            ImGui::PushItemFlag(ImGuiItemFlags_NoNav, true);
+            ImGui::InvisibleButton("##move-handle",
+                                   ImVec2(ImGui::GetContentRegionAvail().x,
+                                          ImGui::GetTextLineHeightWithSpacing()));
+            ImGui::PopItemFlag();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                ImGui::SetTooltip("Drag to move - double-click to center");
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) s_window_moved = false;
+            }
+            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)) {
+                s_window_pos.x += io.MouseDelta.x;
+                s_window_pos.y += io.MouseDelta.y;
+                s_window_moved = true;
+            }
+            ImGui::SetCursorPos(header_cursor);
         }
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme.accent2));
         ImGui::TextUnformatted(ui->config.title ? ui->config.title : "Settings");

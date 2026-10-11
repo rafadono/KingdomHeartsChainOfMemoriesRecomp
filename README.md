@@ -1,274 +1,228 @@
-# KHCOMRecomp — Kingdom Hearts: Chain of Memories (GBA) Static Recompilation
+# KHCOMRecomp: Kingdom Hearts: Chain of Memories (GBA) static recompilation
 
 [![Project Status: Beta](https://img.shields.io/badge/Status-Beta%20%2F%20Work%20in%20Progress-orange?style=flat&logo=git)](https://github.com/rafadono/KingdomHeartsChainOfMemoriesRecomp)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Project-FF5E5B?style=flat&logo=kofi&logoColor=white)](https://ko-fi.com/rafadono)
 
 > [!NOTE]
-> **Project Status: Beta / Work-in-Progress (Not a Final Release)**
-> This project is currently in **Beta / Active Development** and is **not a final finished product**. 
-> While core gameplay, 16:9 widescreen battle arena rendering, audio DSP, dialogue backlog/enhancements, and the in-game configuration overlay are functional and backed by automated test suites, features and enhancements are actively being refined, tuned, and tested. Community feedback and bug reports are welcome!
+> **Status: Beta / work in progress.** The game is playable end to end with the options below, which are covered by
+> automated tests (native C++ unit tests and a Python schema/algorithm suite) and by a headless capture harness.
+> Options keep being tuned. Bug reports and feedback are welcome.
 
-Native static recompilation of **Kingdom Hearts: Chain of Memories** for Game Boy Advance to modern PC platforms, built on the `gbarecomp` framework.
+Native static recompilation of **Kingdom Hearts: Chain of Memories** (Game Boy Advance, USA release) to PC, built on the
+[`gbarecomp`](https://github.com/mstan/gbarecomp) framework. The ARM/Thumb code of the ROM is translated ahead of time into C++
+(`generated/`, committed) and linked with the `gbarecomp` runtime, the `recomp-ui` launcher / in-game menu and the reusable
+[`gba-improvements`](https://github.com/rafadono/gba-improvements) library (video, audio and input enhancements).
+**No game data is distributed**: you need your own legally obtained ROM and (optionally) GBA BIOS.
+
+Documentation map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (source tree and data flows),
+[docs/GBA_IMPROVEMENTS_INTEGRATION.md](docs/GBA_IMPROVEMENTS_INTEGRATION.md) (how the library is wired in),
+[docs/TEXT_OVERLAY_ENGINE.md](docs/TEXT_OVERLAY_ENGINE.md) and [docs/TEXT_OVERLAY_RENDER.md](docs/TEXT_OVERLAY_RENDER.md) (HD dialogue text),
+[docs/CAPTURE_HARNESS.md](docs/CAPTURE_HARNESS.md) (headless capture and scripted input),
+[docs/CODE_COVERAGE_AUDIT.md](docs/CODE_COVERAGE_AUDIT.md) (recompilation coverage report), [AGENTS.md](AGENTS.md) (build/test rules for contributors, in Spanish).
 
 ---
 
-## ROM and BIOS Requirements
+## ROM and BIOS
 
 ### Game ROM
-The official target version for this project is the **USA release**:
 
-- **Game Title / ID:** `B8CE`
-- **Region:** USA (NTSC-U, 60 Hz)
-- **SHA-1 Hash:** `10729bd884f8fdca7a310b6d606c52e46657aa48`
-- **Size:** 33,554,432 bytes (32 MB / 256 Mbit)
-- **Save Type:** EEPROM (8 KB / 64 Kbit)
-- **Location:** Place your ROM file in `roms/B8CE.gba` (or any `.gba` file inside `roms/`).
+| | |
+|---|---|
+| Game ID | `B8CE` (USA, NTSC-U) |
+| SHA-1 | `10729bd884f8fdca7a310b6d606c52e46657aa48` |
+| Size | 33,554,432 bytes (32 MB) |
+| Save type | EEPROM, 8 KB |
 
-To verify your ROM file:
+Put the file in `roms/`. The launcher reads the path from [game.toml](game.toml) (`[rom] path`); with `--rom <file>` any file
+name works. Verify the hash (PowerShell / Linux):
+
 ```powershell
-.\build.ps1 -Target verify_rom_hash
-.\build\Release\verify_rom_hash.exe "roms\Kingdom Hearts - Chain of Memories (U)(Venom).gba"
+Get-FileHash -Algorithm SHA1 "roms\<your rom>.gba"
+```
+```bash
+sha1sum "roms/<your rom>.gba"
 ```
 
-### GBA BIOS
-For authentic hardware execution of BIOS SWI calls and interrupt vectors:
+(The `gba-improvements` library also ships a `verify_rom_hash <file> <sha1>` tool, but this repository does not build it:
+`GBAIMP_BUILD_TOOLS` is off for the subproject. Enable it with `-DGBAIMP_BUILD_TOOLS=ON` in your own CMake configure if you want it.)
 
-- **File:** `bios/gba_bios.bin` (or `bios/gba (W).gba`)
-- **Size:** 16,384 bytes (16 KB)
-- **SHA-1 Hash:** `300c20df6731a33952ded8c436f7f186d25d3492`
+### GBA BIOS (optional but recommended)
 
----
-
-## In-Game Configuration Overlay
-
-The application features a real-time in-game configuration overlay built using `recomp-ui`. Open or close the overlay at any time during gameplay without pausing or restarting:
-
-- **Keyboard:** Press `Escape`
-- **Gamepad / Controller:** Press `Guide` / `Home` / `Menu` / `Options`
-
-All adjustments made in the overlay take effect immediately in real time and are persisted across sessions in `config/khcom_settings.ini`.
-Available sections include **Display**, **Graphics**, **Audio**, **Dialogue & Story**, **Controller (Gamepad)**, **Keyboard Controls**, **Gameplay & Assist**, **Diagnostics**, and **Assist Tools**.
+- File: `bios/gba_bios.bin` (or any file passed with `--bios`; the repository layout also uses `bios/gba (W).gba`).
+- Size 16,384 bytes, SHA-1 `300c20df6731a33952ded8c436f7f186d25d3492`.
 
 ---
 
-## Key Features and Enhancements
+## Requirements, build and run
 
-### 1. High Refresh Rate Presentation Engine
-- **Target Framerates:** `60 FPS (Original)`, `120 FPS (2x High Rate)`, `144 FPS`, `Display Native (Auto)`, and `Uncapped`.
-- **Decoupled Simulation:** Game simulation ticks remain locked to authentic 59.7275 Hz GBA hardware cadence, keeping audio pitch, battle card cooldowns, and physics 100% stable without game acceleration.
-- **GPU Temporal Motion Smoothing:** GPU-accelerated blending between simulation frames, eliminating judder and strobing during camera scrolling and card combat.
+Requirements: a C++20 compiler (MSVC 2022 on Windows, GCC/Clang on Linux), CMake 3.20+, Ninja, SDL2 (Linux: `libsdl2-dev`; Windows:
+downloaded automatically into `third_party/sdl2` by `build.ps1`), Python 3 (tests and tools), git submodules:
 
-### 2. Authentic MiSTer FPGA Screen Filters
-- **Hardware Color Profiles:**
-  - `Raw (Uncorrected)`: Pure digital saturated RGB.
-  - `AGB-001 (Reflective TFT)`: Desaturated, gamma 1.45 curve tailored to correct GBA games designed for unlit reflective screens.
-  - `AGS-001 (SP Frontlit)`: Frontlit reflective simulation with subtle cool white point.
-  - `AGS-101 (SP Backlit)`: High-contrast, rich-black backlit model (gamma 2.2).
-  - `MiSTer Gamma 1.6 & 2.2`: Exact mathematical gamma curves from the MiSTer GBA core.
-- **Screen Masks (Direct3D11 Multiplicative Blending):**
-  - `MiSTer LCD Grid`: Inactive matrix grid between TFT liquid crystals.
-  - `MiSTer Subpixel RGB`: Vertical Red, Green, Blue subpixel stripes.
-  - `MiSTer Subpixel BGR`: Alternate subpixel striping.
-  - `MiSTer Diffusion (AGS-001)`: Frontlight light-guide diffusion pattern.
-  - `Game Boy Player Scanlines`: 240p CRT television scanlines.
-  - `CRT Trinitron Aperture Grille`: Vertical phosphor stripes and scanlines.
-- **Mask Intensity Slider:** Live adjustment from 10% to 100% opacity.
+```bash
+git clone --recursive https://github.com/rafadono/KingdomHeartsChainOfMemoriesRecomp.git
+# or, in an existing clone:
+git submodule update --init --recursive      # gbarecomp, external/recomp-ui, external/gba-improvements
+```
 
-### 3. xBRZ High-Precision Pixel Art Upscaler
-- Geometric pattern-recognition edge interpolation engine.
-- Preserves clean diagonal vectors and curves without bilinear blurring.
-- Modes: `Off (Original Pixels)`, `2x xBRZ`, `3x xBRZ`, `4x xBRZ`, `5x xBRZ`.
+`generated/` and `generated_bios/` (the recompiled game and BIOS) are committed, so building does not need the ROM.
 
-### 4. True 360 Analog Movement & Velocity
-- Circular deadzone (configurable, default 18%) with full 360-degree angle resolution.
-- Walk/run speed modulation: Tilting the analog stick below 55% threshold cuts movement speed by 50% for realistic character walking, while full tilt engages running.
-- Modes: `Digital (Original 8-Way)`, `Analog 8-Way (Enhanced)`, and `True 360 Walk & Run`.
+### Windows (MSVC)
 
-### 5. HD Orchestrated Soundtrack & Independent Mixer
-- Replaces compressed GBA chiptune tracks with high-fidelity orchestral arrangements from PlayStation 2 *Re:Chain of Memories*.
-- Configurable track mapping via [config/music_tracks.ini](config/music_tracks.ini).
-- Seamless loop playback and automatic resampling to engine 65,536 Hz 16-bit stereo.
-- **Independent Volume Controls:** Separate sliders for BGM (Music) and SFX (Effects / Combat Audio) from 0% to 150%.
+```powershell
+.\build.ps1 -BuildDir build-vs                                  # KHCOMRecomp.exe + SDL2.dll in the repository root
+.\build.ps1 -BuildDir build-vs -Target khcom_unit_tests         # optional: unit-test executable
+.\KHCOMRecomp.exe                                               # launcher (reads game.toml)
+.\KHCOMRecomp.exe --rom "roms\<your rom>.gba" --bios "bios\gba (W).gba"   # skip the launcher
+```
 
-### 6. Dynamic Text Resizing & Dialogue Presentation Engine
-- **Font Resizing & Variable-Width Spacing (VWF):** Real-time text rendering pipeline replacing fixed-width glyph advance with proportional variable-width spacing. Includes configurable font density (*Original 100%*, *Compact 80%*, and *High-Density 65%*) with glyph bounding-box caching to comfortably fit long lines without text overflow.
-- **Nine-Slice Dialogue Box Scaler:** Dynamically expands dialogue frame borders and backgrounds horizontally while preserving authentic corner aesthetics and seamless transparency.
-- **Grammar & Case-Aware Soft Word-Wrapping:** Intelligently analyzes punctuation, quotation marks, and casing to reflow artificial mid-sentence `\n` breaks into smooth, natural dialogue lines.
-- **Preserved Typewriter Cadence:** Dialogue progresses character-by-character along with original scene bytecode events (mugshots/portraits, pauses, sound effects). No artificial full text dump.
-
-### 7. Conversation Log Sidebar (Backlog)
-- Press **`F2`** on keyboard, or Gamepad **`Back` / `Select` / `Share`** to toggle the story backlog sidebar.
-- **Dynamic In-Game Capture:** Dialogue lines are recorded chronologically in real time as they appear in cutscenes, without preloaded mock entries.
-- **Automatic Game Pause:** Simulation and audio pause while the backlog is open, allowing the player to review dialogue without missing story progression.
-- **Left-Docked Glassmorphic Panel:** Translucent dark sidebar displaying chronological dialogue entries with speaker badges and timestamps.
-- **Smooth Navigation:** Scroll up and down using the mouse wheel, keyboard arrow keys, or gamepad D-Pad.
-- **Closing:** Press `Escape`, `F2`, or Gamepad `B` / `Circle` to resume gameplay.
-
-### 8. Adaptive Widescreen Architecture & Dynamic Pillarboxing (Battle 16:9 / Overworld 3:2)
-- **Event-Driven Aspect Presentation (Combat 16:9 / Non-Combat 3:2):**
-  - **16:9 True Widescreen during Battles:** Combat arenas expand across modern 16:9 and 16:10 viewports without stretching or edge distortion. Background scenery layers (`BG2` and `BG3`) seamlessly render into the extended horizontal field of view, revealing the full arena width.
-  - **Authentic 3:2 Pillarbox for Overworld, Menus & Cinematics:** Outside of battles—during room exploration, door synthesis, menu navigation (Deck Edit, Status, Jiminy's Journal), title screen, and story cutscenes—the game automatically displays the native 240×160 GBA presentation surrounded by clean, undistorted pillarbox black bars, preventing edge glitches or out-of-bounds tile repetition.
-  - **Zero-Latency Dynamic Switching:** Subroutine entry hooks (`khcom_fn_entry_hook`) monitor game execution states in real time (`mode_battle_*`, `task_btl_*`, `task_fld_*`, `mode_status_*`, etc.) to automatically toggle between True Widescreen and 3:2 Pillarbox without frame stutter or manual user intervention.
-- **PPU Rasterizer & HUD Anchoring Integration:**
-  - `khcom_tilemap_provider`: Preserves authentic VRAM tilemap wrapping (`kWsTilemapKeepWrapped`) during combat for full-width arena background coverage.
-  - `khcom_bg_x_provider`: Handles layer visibility. Ensures dialogue windows on BG0 remain centered over the 240px native play area without bleeding into margins, anchors BG1 HUD elements to screen edges when enabled, and blanks margin columns during non-battle sequences.
-  - `khcom_obj_attr_x_provider`: Hooks OAM sprite attributes in real time. Displaces Sora's HP bar to the top-left margin (`X -= extra_left`) and Card Deck / reload counter to the bottom-right margin (`X += extra_right`) when Widescreen Anchoring is active, while unwrapping 9-bit signed coordinates so sprites do not pop on opposite screen edges.
-
-#### Why True 16:9 is Exclusive to Combat Arenas (Technical & Design Rationale)
-A frequent question is why widescreen expansion (284×160) is active exclusively during combat arenas rather than throughout the entire game. This deliberate architectural decision is grounded in the GBA hardware architecture, the internal engine design of *Kingdom Hearts: Chain of Memories*, and strict visual quality standards:
-
-1. **Continuous Wraparound Cylindrical Arenas (Combat Only):**
-   - In battle, the background environments (`BG2` and `BG3`) are authored as complete, 360-degree cylindrical scrolling tilemaps stored in VRAM (typically 512×256 pixels).
-   - Because this backdrop art continually wraps around the arena, expanding the horizontal viewport from 240px to 284px reveals **genuine, pre-existing scenery** without exposing empty voids or unmapped geometry. The arena is an enclosed space where all combatants stay within natural bounds.
-
-2. **Room Exploration & Culling Boundaries (Overworld / Field Maps):**
-   - Outside of battle, rooms in Castle Oblivion are isometric environments strictly constructed to fit the original 240×160 screen boundaries.
-   - The game engine relies on viewport-edge culling: Heartless enemies, destructible objects, and door synthesis portals spawn and despawn precisely at the 240px edge.
-   - Expanding the horizontal viewport during field exploration exposes the **unrendered void beyond the room's walls** (uninitialized VRAM tile garbage, black voids, repeating edge seams).
-   - Enemies would be seen frozen off-camera or popping into existence inside the visible margins, destroying immersion.
-
-3. **Menu Layouts & Interface Distortion (UI / Menus):**
-   - Interface screens—including the Title Screen, Jiminy's Journal, Deck Edit / Card Customization, World Map, Status screen, and Moogle Shop—are static, full-screen 240×160 pixel art compositions.
-   - Forcing 16:9 would either:
-     - Unevenly stretch the 240px UI horizontally (distorting square pixels, flattening circular card symbols, and producing blurry font scaling), or
-     - Display awkward disjointed borders with missing edge frames.
-   - Clean 3:2 pillarboxing ensures menus remain pixel-perfect, crisp, and authentic.
-
-4. **Cinematic Scripting & Theatrical Blocking (Story Cutscenes):**
-   - Story cutscenes (e.g. Castle Oblivion hallway encounters, Organization XIII dialogues, Disney world cinematics) are choreographed with fixed 240-pixel camera blocking.
-   - Characters enter and exit scenes by walking just past the 240px boundary.
-   - In 16:9, actors would be visible "waiting in the wings" off-stage, or abruptly vanishing once they cross the 240px threshold, breaking theatrical illusion.
-   - Dialogue boxes (`BG0`) are framed to span 240px; expanding the screen would leave awkward empty side gaps or stretch character portraits.
-
-5. **Hardware Sprite Coordinate Wrapping (9-Bit OAM Limits):**
-   - The GBA PPU uses 9-bit unsigned coordinates ($0..511$) for OAM sprites.
-   - In combat, `khcom_obj_attr_x_provider` specifically unwraps 9-bit coordinates for combat sprites and anchors the HP bar and Card Deck to 16:9 screen corners.
-   - In the overworld, applying this would distort NPC dialogue icons, speech bubbles, and door icons.
-
-6. **Preservation of Authentic Geometric Proportions:**
-   - Unlike generic emulator widescreen hacks that stretch the 3:2 framebuffer and cause "fat Sora" and warped sprites, KHCOMRecomp adheres to **True Geometric Widescreen**: all sprites and models maintain their exact 1:1 square pixel aspect ratio at all times. Widescreen is applied only where real artwork exists to be revealed, and clean pillarboxing is applied elsewhere to preserve artistic integrity.
-
-### 9. Native RAM Overlay Dispatch & Combat Performance Optimization
-- **Binary-Search Dispatcher:** Routes all 168 dynamic IWRAM (`0x0300xxxx`) and EWRAM (`0x0203xxxx`) combat routines directly to their native recompiled implementations.
-- **Full 60 FPS Combat:** Completely eliminates dynamic interpretation drops and on-the-fly JIT compilation stutters during battles, card sleights, and enemy encounters.
-
-### 10. Performance HUD & Frametime Graph
-- Real-time FPS counter with 60 FPS target indicator (`[LOCKED]` vs `[VAR]`).
-- Precision frame duration in milliseconds and rolling average.
-- 120-frame rolling pacing history graph with 16.67 ms (60 FPS) target line.
-- Dynamic color coding (Emerald Green for 60 FPS lock, Amber Yellow for slight variance, Rose Red for frame drops).
-- Movable positioning: Draggable with mouse anywhere on screen, including docking into the black letterbox / pillarbox bars.
-- Hotkey **`F10`** to cycle HUD display modes.
-
-### 11. Dual-Aspect Viewport & Scaling Pipeline
-- **Selectable View Modes (via In-Game Overlay):**
-  - `3:2 (Native)`: Preserves authentic 240×160 GBA pixel aspect ratio across all game scenes. Centered with clean, pure black letterbox or pillarbox bars on any modern monitor or handheld display without distortion.
-  - `16:9 (Battles only)`: Fixed widescreen (284×160) active exclusively during combat arenas, revealing extended background scenery while maintaining correct sprite proportions. Outside combat (menus, world exploration, cutscenes), the display automatically falls back to 3:2 pillarboxing, preventing tile glitches or edge repetition (see detailed technical rationale in Section 8).
-- **Strict Geometric Preservation:** Arbitrary adaptive stretching has been eliminated to ensure sprites, UI, and text never appear warped, stretched, or unevenly scaled.
-- **Window Scaling & Presentation:**
-  - Freely resizable window with real-time aspect-ratio-preserving viewport centering and letterboxing/pillarboxing.
-  - Fullscreen toggle via `Alt + Enter`.
-  - Fully compatible with high refresh rates (60/120/144/Uncapped), GPU temporal motion smoothing, xBRZ pattern upscaling, and CRT/LCD shader masks.
-
-### 12. High-Fidelity Audio DSP Suite
-- **MP2K Shadow Mixer:** High-sample-rate shadow voice mixer eliminating GBA hardware audio quantization noise.
-- **DAC Anti-Aliasing Filter:** Biquad low-pass filter targeting ultrasonic PWM/DAC switching hiss.
-- **Parametric Equalizer Profiles:** *Flat (Authentic)*, *Warm Retro*, *Crisp Modern*, *Bass Boost*.
-- **Stereo Width Expansion:** Adjustable from 0% (mono) to 200% (expanded stereo).
-- **Soft-Knee Peak Limiter:** Prevents digital clipping on multi-card sleights.
-
-### 13. Assist Tools & Save State Thumbnails
-- **Save States & Load States:** 10 independent slots with visual thumbnail capture (`saves/thumbnails/slot_X.bmp`) and timestamps.
-- **Fast-Forward:** Uncaps framerate with a customizable multiplier from **2x to 10x** (default: 4x).
-- **Rewind:** Real-time rewind buffer capturing up to 60 seconds of continuous gameplay.
-- **Turbo Dialog & Skip:** Hold **`Tab`** or Gamepad **`Y` / `Triangle`** to auto-advance dialogue boxes at 60Hz.
-
----
-
-## Default Controls
-
-Key mappings can be configured in [keybinds.ini](keybinds.ini) or via the in-game overlay:
-
-| Function | Keyboard | Gamepad (Xbox / PlayStation / Switch) |
-|---|---|---|
-| D-Pad / Movement | Arrow Keys | D-Pad / Left Analog Stick (True 360 Walk & Run) |
-| A | X | A / Cross / B |
-| B | Z | B / Circle / A |
-| L | C | Left Bumper (LB / L1 / L) |
-| R | V | Right Bumper (RB / R1 / R) |
-| Start | Enter (Return) | Start / Options / + |
-| Select | Right Shift | Back / Share / - |
-| Conversation Backlog | F2 | Back / Select / Touchpad / Share |
-| Turbo Dialog Skip | Tab | Y / Triangle / X |
-| Fast-Forward | 2 | Right Trigger (RT / R2 / ZR) |
-| Rewind | 1 | Left Trigger (LT / L2 / ZL) |
-| Performance HUD | F10 | Via In-game Overlay |
-| Overlay Menu | Escape | Guide / Home / Menu |
-
-### Save / Load Hotkeys
-- **Save State (Slots 1-9):** `Shift + F1` to `Shift + F9`
-- **Load State (Slots 1-9):** `F1` to `F9`
-- **Performance HUD Cycle:** `F10`
-- **Conversation Backlog:** `F2`
-- **Fullscreen:** `Alt + Enter`
-
-### In-Game Controls Customization
-Access the **Controller (Gamepad)** and **Keyboard Controls** tabs in the overlay menu (`Escape`) to customize your controls with an emulator-inspired interface:
-- **Dedicated Device Tabs:** Separate sections for Gamepad and Keyboard eliminate redundant button repetition and declutter the UI.
-- **Action-Oriented Naming:** Clear in-game action labels (*Attack / Card Action*, *Jump / Dodge Roll*, *Cycle Deck Left / Right*, *Pause / Camp Menu*, *Switch Deck / Reload*) instead of raw hardware button codes.
-- **Emulator-Style Key Capture:** Click any action key to instantly bind via physical keypress (*Press any key... / Esc to Cancel*), with clean key badges rendered in the UI.
-- **Keyboard Layout Presets:** One-click presets for *Classic Arrows + Z/X*, *Modern WASD + J/K*, *Retro Emulation*, *Ergonomic*, and *Custom Mappings*.
-- **Gamepad Profiles & Buttons:** Presets for *Xbox / Standard*, *Nintendo Switch*, *PlayStation*, *Swapped Bumpers*, *Triggers for Deck*, or custom per-action button remapping.
-- **Analog Movement & Deadzone:** Switch between *Original Digital (D-Pad)*, *8-Way Analog Directional*, and *Full 360 Walk & Run*, with custom stick deadzone percentage.
-- **Granular Reset Actions:** Independent reset buttons for Gamepad and Keyboard defaults.
-
----
-
-## Build Workflow
+`build.ps1` finds Visual Studio's CMake/Ninja, configures `Ninja Multi-Config` and copies the result to the root. `-BuildDir`
+keeps the Windows cache apart from the Linux one (`build-vs` vs `build`). `-Recompile` re-runs the static recompiler on the ROM
+(regenerates `generated/`, normally not needed), `-BuildRecompiler` builds only `gba_recompile`.
 
 ### Linux
 
-#### 1. Build the Game Executable
 ```bash
-./build.sh --config Release
+docker build -t khcom-builder docker/                           # once (Ubuntu 24.04 + toolchain + SDL2 headers)
+docker run --rm -v "$PWD:/src" -w /src khcom-builder bash -c \
+  "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --config Release"
+./KHCOMRecomp                                                   # copied from build/ by the post-build step
 ```
-Or with CMake directly:
+
+On a host with the dependencies installed (`build-essential cmake ninja-build libsdl2-dev python3`) `./build.sh --config Release`
+does the same without Docker (`./build.sh --help` lists the options). The exact verification commands used by contributors
+(build, `cmp`, tests) are in [AGENTS.md](AGENTS.md).
+
+### Tests
+
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
-cmake --build build --config Release --target KHCOMRecomp
+./build/khcom_unit_tests && python3 tests/test_runtime_functions.py        # Linux / Docker
 ```
-The resulting executable is automatically copied to `./KHCOMRecomp` (and `build/KHCOMRecomp`).
-
-#### 2. Execution
-```bash
-./KHCOMRecomp
-```
-
-### Windows
-
-#### 1. Static Recompilation
-Generates native C++ sources from the ARM/Thumb instructions in the ROM:
 ```powershell
-.\build.ps1 -Recompile
+.\build-vs\Release\khcom_unit_tests.exe; python tests\test_runtime_functions.py   # Windows
 ```
 
-#### 2. Build the Game Executable
-Compiles the generated C++ shards and links them with the runtime, overlay, enhancement modules, and SDL2:
-```powershell
-.\build.ps1 -Target KHCOMRecomp -Config Release
-```
-The resulting binary is generated at `build\Release\KHCOMRecomp.exe`.
-
-#### 3. Execution
-```powershell
-.\build\Release\KHCOMRecomp.exe
-```
+`khcom_unit_tests` runs every native suite (library integration, HUD zones, widescreen view modes and return to the original 3:2
+state, music hook, dialogue backlog, capture harness, HD text overlay render and engine tests). `tests/test_runtime_functions.py`
+checks the settings schema and the algorithms in Python; it rewrites `keybinds.ini` line endings, so run `git checkout -- keybinds.ini`
+afterwards. CI (`.github/workflows/ci.yml`) builds both platforms and runs the Python suite only; the native unit tests are run locally.
 
 ---
 
-## Support & Sponsorship
+## In-game settings overlay
 
-If you enjoy this project and wish to support its continued development, you can support me on Ko-fi:
+Press **`Escape`** (keyboard) or **`Guide` / `Home` / `Menu`** (gamepad) at any time to open or close the settings menu (built with
+`recomp-ui`). Changes apply immediately and are saved to `khcom_config.ini` in the working directory (key bindings to `keybinds.ini`).
+The menu window can be **moved by dragging its header** with the mouse (double-click the header to centre it again; the position
+is kept until the program exits). The "RESUME" row of the stock menu is removed.
+
+Sections: Display and Graphics (resolution, filters, view mode, upscaler, frame rate), Audio, **Dialogue Text (HD)**, Dialogue & Story,
+Controller (Gamepad), Keyboard Controls, Gameplay & Assist, Diagnostics & HUD, System. The view mode is chosen in Display:
+`3:2 (Native)` or `16:9 (Battles only)`.
+
+---
+
+## Features
+
+### View modes and widescreen (battles only)
+
+- **`3:2 (Native)`**: the original 240x160 picture, letter/pillar-boxed. The game behaves exactly as the original: switching back
+  to 3:2 (even in the middle of a battle) removes every widescreen provider and HUD displacement and resets the PPU policy globals
+  to the faithful values (`apply_view_policy()` in `src/widescreen_adapter.cpp`, covered by the *view-mode return-to-original* test).
+- **`16:9 (Battles only)`**: a 284x160 picture **only while a battle arena is shown**. Field maps, menus, the title screen and story
+  cutscenes stay 3:2 with black pillars. During battles the BG2/BG3 arena backgrounds reveal real extra scenery and the HUD (player
+  portrait/HP top left, card deck bottom right) is shifted into the corners by exactly the real extra width of each side. **HUD
+  anchoring is not a separate option** (the old `hud_anchoring=` line in `khcom_config.ini` is accepted and ignored).
+- Sprites keep their 1:1 pixel aspect at all times: no stretched "fat Sora".
+
+Why only battles: battle backdrops are 360-degree wrapping tilemaps in VRAM (the wider view shows real artwork); field rooms, menus and
+cutscenes are authored and culled for exactly 240 px (the wider view would expose unrendered voids, enemies spawning in view,
+actors waiting off-stage and stretched UI). Details: `src/widescreen_adapter.h` and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### Video
+
+- **Frame rate**: 60 (original), 120, 144, display native or uncapped presentation. Simulation stays on the 59.7275 Hz GBA cadence;
+  only presentation is faster. **Motion smoothing** (Off / Smooth Blend / Motion-adaptive) blends intermediate frames from the previously
+  presented frame (back-buffer readback, no effect at 60 Hz).
+- **Colour profiles**: Raw, AGB-001 (reflective), AGS-001 (SP front-lit), AGS-101 (SP back-lit), MiSTer gamma 1.6 / 2.2.
+- **Screen masks** (with an intensity slider, 10-100 %): LCD grid, RGB / BGR sub-pixel, diffusion, Game Boy Player scanlines, CRT Trinitron.
+- **Pixel-art upscaler** 2x to 5x. The menu label still says "xBRZ" for config compatibility (`xbrz_scale`), but the algorithm in the
+  library is an original edge-aware Scale2x/EPX-style filter, **not xBRZ**.
+- Perf HUD: FPS, frame time and a 120-frame graph; `F10` cycles modes; draggable anywhere, including the letterbox bars.
+
+### Dialogue text
+
+- **Original text mode (default)**: the game draws its own dialogue text untouched (font, size, line breaks, typewriter cadence).
+  There is no in-engine text enhancement any more.
+- **HD text overlay** (menu *Dialogue Text (HD)*, `hdtext_enabled`, off by default): the engine text of cutscene dialogue is hidden and
+  the same page is drawn at output resolution, following the typewriter reveal and screen fades. Options: font family (8 built-in OFL
+  families plus any `.ttf` in a `fonts/` folder), size, line and letter spacing, wrapping (*Keep engine line breaks* / *Reflow to the text
+  box*), style (plain / drop shadow / outline), colours including *Match game*, opacity, box padding, auto-fit with a minimum size. It stands down
+  (the original text shows) on battles, menus and anything it cannot reproduce exactly. The overlay is drawn right after the game image, so the
+  settings menu stays on top. See [docs/TEXT_OVERLAY_ENGINE.md](docs/TEXT_OVERLAY_ENGINE.md) and [docs/TEXT_OVERLAY_RENDER.md](docs/TEXT_OVERLAY_RENDER.md).
+- **Conversation log (backlog)**: `F2` or the gamepad Back/Select button opens a left-docked sidebar with the dialogue seen so far; the game
+  pauses while it is open. Scroll with the mouse wheel, arrows, Page Up/Down or the D-pad; close with `Escape`, `F2` or gamepad `B`.
+- **Turbo dialog**: hold `Tab` (gamepad `Y`) to advance text quickly.
+
+### Audio
+
+- **HD soundtrack** (the switch is on by default, but nothing plays until you provide and map WAV files): the game's own m4a "song start" calls are observed (`src/music_hook.cpp`) and a mapped song id plays a
+  WAV from [config/music_tracks.ini](config/music_tracks.ini) (the audio files are **not** included; the ids shipped there are placeholders, see
+  [docs/GBA_IMPROVEMENTS_INTEGRATION.md](docs/GBA_IMPROVEMENTS_INTEGRATION.md)). The original music keeps playing underneath. Independent BGM and SFX volume (0-150 %).
+- **DSP chain** on the real audio path: equalizer presets (Flat, Warm Retro, Crisp Modern, Bass Boost), DAC anti-aliasing, stereo width, peak limiter.
+
+### Controls
+
+Keyboard defaults are in [keybinds.ini](keybinds.ini) and editable from the menu (*Keyboard Controls*: presets Default, WASD + J/K/U/I, Classic
+Emulation, Arrows + Z/X/Q/W, Custom; click an action and press a key). Gamepad: profiles Xbox/Standard, Nintendo, PlayStation, Swapped Shoulders, Triggers
+for Deck, Custom; analog modes Digital, Analog 8-way, True 360 walk/run; stick deadzone.
+
+| Function | Keyboard | Gamepad |
+|---|---|---|
+| Move | Arrow keys | D-pad / left stick |
+| A / B | `X` / `Z` | A / B (per profile) |
+| L / R | `C` / `V` | bumpers (per profile) |
+| Start / Select | `Enter` / Right Shift | Start / Back |
+| Settings menu | `Escape` | Guide / Home / Menu |
+| Conversation log | `F2` | Back / Select |
+| Turbo dialog | `Tab` | `Y` |
+| Perf HUD cycle | `F10` | menu |
+| Fast-forward / Rewind | `2` / `1` | triggers |
+| Save state / load state (slots 1-9) | `Shift+F1..F9` / `F1..F9` | |
+| Fullscreen | `Alt+Enter` | |
+
+Assist tools (from `gbarecomp`): 10 save-state slots with thumbnails (`saves/thumbnails/`), fast-forward (default 4x), 60 s rewind buffer.
+
+### Performance
+
+The IWRAM/EWRAM routines the game copies and runs from RAM are dispatched to native recompiled code (`src/ram_overlay_dispatch.cpp`, generated), so battles do
+not fall back to interpretation.
+
+---
+
+## Developer tooling
+
+An index of every script is in [tools/README.md](tools/README.md).
+
+- **Capture harness**: headless run (SDL dummy drivers), deterministic scripted input, PNG capture of native / output frames, setting overrides,
+  savestates, window sizes. Env-gated (`KHCOM_*`). See [docs/CAPTURE_HARNESS.md](docs/CAPTURE_HARNESS.md) and `tools/capture/`.
+- `KHCOM_LOG_INTERPOSE=1` prints the SDL interposition status and counters (and the first m4a song starts) on stderr.
+- `tools/overlay_dump.cpp`, `tools/overlay_png_to_ppm.py`, `tools/gen_font_data.py`: PNG dump of the text overlay and regeneration of the embedded font data
+  ([third_party/fonts/README.md](third_party/fonts/README.md)).
+- `tools/update_symbols.py`, `tools/import_decomp_symbols.py`, `tools/dialogue_text_tool.py`: symbol and offline dialogue-script helpers (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+- Recompilation helper scripts (control-flow tracing, coverage audit, RAM dispatch generation) live in the library: `external/gba-improvements/tools/`.
+
+---
+
+## License and notices
+
+- This repository does not yet contain a `LICENSE` file (the owner has not chosen the terms). It is built on `gbarecomp`
+  (**PolyForm Noncommercial License 1.0.0**), so the combined program is bound by those terms; read `gbarecomp/LICENSE` before redistributing.
+- `external/gba-improvements`: MIT. `external/recomp-ui`: MIT (bundles Dear ImGui, see its own files). SDL2: zlib (downloaded, not committed).
+- Embedded fonts (SIL OFL 1.1) and `stb_truetype` (public domain / MIT): see [NOTICE](NOTICE) and [third_party/fonts/README.md](third_party/fonts/README.md).
+- No ROM, BIOS or music files are included. Kingdom Hearts is a trademark of its owners; this is an independent fan project.
+
+## Support
+
+If you enjoy the project you can support its development on Ko-fi:
 
 [![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/rafadono)
-

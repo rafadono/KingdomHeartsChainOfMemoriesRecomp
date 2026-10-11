@@ -1,0 +1,12 @@
+# Reaches the first castle dialogue of the intro and stops pressing buttons, so the page stays on screen.
+# Frames are PPU frame counts from boot (deterministic; same result with or without fast-forward).
+#   ~1200       title screen "PRESS START"
+#   1300        START -> menu -> NEW GAME (the A presses below confirm the menus; file select ~1650)
+#   ~1900-6300  opening movie (Sora, Donald, Goofy on the road; Namine drawing ~5900)
+#   ~6300-8100  castle title card, hall without text ~8400-8700
+#   ~9000       first text pages (Goofy "You sure we...", Donald "We have to if we're gonna find the king...")
+#   ~10450      Sora page "One look at this castle, and I just knew: They're here." fully typed -> capture 10500
+# Later pages with the same script (A mashing continues up to 10350 only, so use scripts/explore_a.txt for those):
+#   12300 Sora "To check it out! What's the matter, scared?"   13500 Sora "Who is THAT"   13800 Donald "It must be a Heartless!"
+1300-1303: START
+1500-10350 every 100 hold 3: A

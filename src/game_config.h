@@ -18,5 +18,6 @@ void close_runtime_menu();
 void toggle_runtime_menu();
 void save_khcom_config();
 void load_khcom_config();
+// (gba-improvements hooks and HUD zones: see gbaimp_integration.h)
 
 }

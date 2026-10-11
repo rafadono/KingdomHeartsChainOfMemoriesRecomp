@@ -1,0 +1,4 @@
+# Exploration script: START on the title, then press A every 100 frames until frame 30000 (skips cutscenes/dialogue
+# quickly; use it with a coarse capture grid to find scenes, then write a precise script like first_dialogue.txt).
+1300-1303: START
+1500-30000 every 100 hold 3: A

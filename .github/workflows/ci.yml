@@ -38,6 +38,16 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File .\build.ps1 -Target KHCOMRecomp -Config Release
 
+      - name: Build and Run Native Unit Tests
+        shell: powershell
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\build.ps1 -Target khcom_unit_tests -Config Release
+          .\build\Release\khcom_unit_tests.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run Automated Test Suite
         shell: powershell
         run: |
@@ -101,6 +111,14 @@ jobs:
         run: |
           chmod +x build.sh
           ./build.sh -c Release
+
+      - name: Build and Run Native Unit Tests
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          cmake --build build --config Release --target khcom_unit_tests
+          ./build/khcom_unit_tests
 
       - name: Run Automated Test Suite
         run: |

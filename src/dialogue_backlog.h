@@ -39,9 +39,6 @@ public:
     // Real-time bus read observer: captures active cutscene dialogue characters as they are rendered
     void on_bus_read_u16(uint32_t addr);
 
-    // Backward-compatible empty hook
-    void check_fn_entry_dialogue() {}
-
     const std::vector<DialogueEntry>& entries() const { return entries_; }
 
 private:

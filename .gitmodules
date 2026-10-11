@@ -4,3 +4,6 @@
 [submodule "external/recomp-ui"]
 	path = external/recomp-ui
 	url = https://github.com/RetroPortingToolKit/recomp-ui.git
+[submodule "external/gba-improvements"]
+	path = external/gba-improvements
+	url = https://github.com/rafadono/gba-improvements.git

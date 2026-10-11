@@ -1,6 +1,4 @@
 #include "dialogue_backlog.h"
-#include "dialogue_enhancer.h"
-#include "font_resizer.h"
 #include "armv4t/runtime_arm.h"
 #include "cutscene_dialogue_data.inl"
 #include <SDL.h>
@@ -566,28 +564,14 @@ void DialogueBacklog::render_sidebar(SDL_Renderer* renderer, int win_w, int win_
     SDL_RenderSetScale(renderer, 1.0f, 1.0f);
 }
 
-namespace gba {
-extern "C" __attribute__((weak)) int (*g_rom_read16_override)(std::uint32_t address,
-                                                              std::uint16_t original_value,
-                                                              std::uint16_t* out_value);
-extern "C" __attribute__((weak)) int (*g_rom_read32_override)(std::uint32_t address,
-                                                              std::uint32_t original_value,
-                                                              std::uint32_t* out_value);
-}
-
+// Read-only observer on every guest bus read: feeds the backlog (F2 history). It never overrides a value.
 static int khcom_bus_read_hook(uint32_t pc, uint32_t addr, uint32_t width, uint32_t value, uint32_t* overridden) {
     (void)pc;
     (void)value;
+    (void)overridden;
 
     if (is_internal_bus_read()) {
         return 0;
-    }
-
-    int res = 0;
-    if (overridden && FontResizer::instance().intercept_bus_read(addr, width, overridden)) {
-        res = 1;
-    } else if (overridden && DialogueEnhancer::instance().intercept_bus_read(addr, width, overridden)) {
-        res = 1;
     }
 
     if (width == 1) {
@@ -598,45 +582,11 @@ static int khcom_bus_read_hook(uint32_t pc, uint32_t addr, uint32_t width, uint3
         DialogueBacklog::instance().on_bus_read_u16(addr);
         DialogueBacklog::instance().on_bus_read_u16(addr + 2);
     }
-    return res;
-}
-
-static int khcom_rom_read16_hook(std::uint32_t addr, std::uint16_t original, std::uint16_t* overridden) {
-    if (is_internal_bus_read()) return 0;
-    uint32_t val = original;
-    if (FontResizer::instance().intercept_bus_read(addr, 2, &val)) {
-        *overridden = static_cast<uint16_t>(val);
-        return 1;
-    }
-    if (DialogueEnhancer::instance().intercept_bus_read(addr, 2, &val)) {
-        *overridden = static_cast<uint16_t>(val);
-        return 1;
-    }
-    return 0;
-}
-
-static int khcom_rom_read32_hook(std::uint32_t addr, std::uint32_t original, std::uint32_t* overridden) {
-    if (is_internal_bus_read()) return 0;
-    uint32_t val = original;
-    if (FontResizer::instance().intercept_bus_read(addr, 4, &val)) {
-        *overridden = val;
-        return 1;
-    }
-    if (DialogueEnhancer::instance().intercept_bus_read(addr, 4, &val)) {
-        *overridden = val;
-        return 1;
-    }
     return 0;
 }
 
 void khcom_install_backlog_hook() {
     g_runtime_bus_read_override = &khcom_bus_read_hook;
-    if (&gba::g_rom_read16_override && gba::g_rom_read16_override != &khcom_rom_read16_hook) {
-        gba::g_rom_read16_override = &khcom_rom_read16_hook;
-    }
-    if (&gba::g_rom_read32_override && gba::g_rom_read32_override != &khcom_rom_read32_hook) {
-        gba::g_rom_read32_override = &khcom_rom_read32_hook;
-    }
 }
 
 } // namespace khcom

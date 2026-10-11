@@ -1,5 +1,7 @@
 # Code Coverage and Static Recompilation Audit
 
+Generated report (snapshot) written by `external/gba-improvements/tools/audit_code_coverage.py` (invocation in [GBA_IMPROVEMENTS_INTEGRATION.md](GBA_IMPROVEMENTS_INTEGRATION.md), "Tool invocations"). The figures below are the values of that run; re-run the tool after changing `config/b8ce.toml` and the file is overwritten (default `--report docs/CODE_COVERAGE_AUDIT.md`). The shard count below was updated by hand.
+
 ## Executive Summary
 
 - **Target ROM:** Kingdom Hearts: Chain of Memories (USA, B8CE)
@@ -65,4 +67,4 @@
 
 ## Recompiled Functions Distribution
 
-All 4450 recompiled functions reside in `config/b8ce.toml` and are emitted into 16 C++ code shards in `generated/`.
+All 4450 recompiled functions reside in `config/b8ce.toml` and are emitted into 32 C++ code shards (`generated/recompiled_000.cpp` .. `recompiled_031.cpp`, plus `dispatch_table.cpp`, `symbol_map.cpp`, `recompiled.h`).

@@ -3,7 +3,10 @@ param(
     [string]$Config = "Release",
     [switch]$BuildRecompiler,
     [switch]$Recompile,
-    [string]$RomPath = "roms\B8CE.gba"
+    [string]$RomPath = "roms\B8CE.gba",
+    # Build directory under the repo root. Use a different one than the Docker/Linux
+    # build (which uses "build") so the two CMake caches do not clash, e.g. -BuildDir build-vs.
+    [string]$BuildDir = "build"
 )
 
 $ErrorActionPreference = "Stop"
@@ -99,7 +102,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $recompUiDir "CMakeLists.txt"))) {
 
 Write-Host "[KHCOMRecomp] CMake: $cmakePath"
 
-$buildDir = Join-Path $root "build"
+$buildDir = Join-Path $root $BuildDir
 
 if ($BuildRecompiler) {
     Write-Host "[KHCOMRecomp] Building gba_recompile..."

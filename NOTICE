@@ -1,0 +1,39 @@
+KHCOMRecomp - third-party notices
+
+This file lists third-party material that is part of, linked into or embedded in KHCOMRecomp. It does not grant any licence for this
+repository's own code (see README.md, "License and notices").
+
+Game data
+* No game ROM, GBA BIOS, music or other copyrighted game asset is distributed. You must supply your own legally obtained copies.
+  Kingdom Hearts is a trademark of its respective owners; this is an independent fan project.
+
+Linked components (git submodules / downloads, not copied into this tree)
+* gbarecomp (gbarecomp/) - Copyright (c) 2026 Matthew Stanley, PolyForm Noncommercial License 1.0.0 (gbarecomp/LICENSE).
+  The combined program (KHCOMRecomp + gbarecomp) is bound by those terms. Its own third-party list: gbarecomp/THIRD_PARTY_ATTRIBUTION.md.
+* recomp-ui (external/recomp-ui/) - MIT License, Copyright (c) 2026 Matthew Stanley; it bundles Dear ImGui and other components under their
+  own licences (see the files under external/recomp-ui/).
+* gba-improvements (external/gba-improvements/) - MIT License, Copyright (c) 2026 rafadono; notes in external/gba-improvements/NOTICE.md
+  (including an open provenance item for the 5x7 bitmap font of its performance overlay).
+* SDL2 (https://libsdl.org) - zlib licence. The Windows development package is downloaded by build.ps1 into third_party/sdl2 (ignored by git);
+  Linux builds use the system package.
+
+Embedded in the executable (HD dialogue text overlay)
+
+* PT Sans, PT Sans Narrow, PT Serif (Latin subsets, embedded as src/text_fonts_data.cpp)
+  Copyright (c) 2010, ParaType Ltd. (http://www.paratype.com/public), with Reserved Font Names "PT Sans" and "ParaType".
+  Licensed under the SIL Open Font License, Version 1.1 - see third_party/fonts/OFL-ParaType.txt.
+  Sources, hashes and subsetting: third_party/fonts/README.md.
+
+* Atkinson Hyperlegible (c) 2020 Braille Institute of America, Inc.; Varela Round (c) 2023 The Varela Round Project Authors
+  (Reserved Font Names "Varela", "Varela Round"); Cousine (c) 2026 The Cousine Project Authors; VT323 (c) 2011 The VT323 Project
+  Authors; Press Start 2P (c) 2012 The Press Start 2P Project Authors (Reserved Font Name "Press Start 2P"). Latin subsets embedded
+  in src/text_overlay/overlay_fonts_data.cpp, each licensed under the SIL Open Font License, Version 1.1 - see
+  third_party/fonts/OFL-Atkinson.txt, OFL-VarelaRound.txt, OFL-Cousine.txt, OFL-VT323.txt, OFL-PressStart2P.txt.
+  Sources, hashes and subsetting: third_party/fonts/README.md.
+
+* stb_truetype.h v1.26 (third_party/stb/stb_truetype.h)
+  Public domain (Sean Barrett / RAD Game Tools). Dual licensed MIT / public domain per the header.
+
+Data and symbol sources
+* Function names in symbols/ can be imported from the matching decompilation project (pheenoh/khcom) with tools/import_decomp_symbols.py;
+  see symbols/README.md. The raw dumps (symbols/*_readelf_*.txt, *.map, *.elf) are git-ignored.

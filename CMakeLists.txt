@@ -40,15 +40,28 @@ set(GBARECOMP_GENERATED_BIOS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated_bios"
 
 add_subdirectory("${GBARECOMP_ROOT}" gbarecomp_build EXCLUDE_FROM_ALL)
 
-# Tool: verify_rom_hash
-add_executable(verify_rom_hash tools/verify_rom_hash/main.cpp)
-target_include_directories(verify_rom_hash PRIVATE
-    "${GBARECOMP_ROOT}/src"
-)
-target_link_libraries(verify_rom_hash PRIVATE
-    gbarecomp_gba
-)
-set_target_properties(verify_rom_hash PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+# Reusable gba-improvements library (namespace gbaimp). It lives in the
+# external/gba-improvements git submodule; -DGBAIMP_ROOT=<path> overrides it
+# (e.g. a local checkout). Its own unit tests are not built as a subproject.
+set(GBAIMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/gba-improvements"
+    CACHE PATH "gba-improvements library root (git submodule)")
+
+if(NOT EXISTS "${GBAIMP_ROOT}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "GBAIMP_ROOT does not point to a gba-improvements checkout: ${GBAIMP_ROOT}\n"
+        "Run: git submodule update --init external/gba-improvements\n"
+        "or pass -DGBAIMP_ROOT=<path to gba-improvements>.")
+endif()
+
+# The library calls find_package(SDL2 REQUIRED). On Windows/MSVC KHR ships the SDL2 "VC"
+# devel package in third_party/sdl2, which provides cmake/sdl2-config.cmake (SDL2::SDL2).
+# Point find_package at it so the library target gets valid include/link settings.
+# (Not buildable in the Docker/Linux environment; validate on Windows.)
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/cmake/sdl2-config.cmake")
+    set(SDL2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/cmake" CACHE PATH "SDL2 config dir" FORCE)
+endif()
+
+add_subdirectory("${GBAIMP_ROOT}" gba_improvements_build EXCLUDE_FROM_ALL)
 
 # KHCOMRecomp game target
 file(GLOB KHCOM_GENERATED_SOURCES CONFIGURE_DEPENDS
@@ -59,22 +72,23 @@ file(GLOB KHCOM_GENERATED_SOURCES CONFIGURE_DEPENDS
 set(KHCOM_RUNTIME_SOURCES
     src/main.cpp
     src/game_config.cpp
-    src/audio_dsp.cpp
-    src/perf_hud.cpp
-    src/frame_interpolator.cpp
-    src/screen_filters.cpp
-    src/input_enhancements.cpp
-    src/hd_audio_player.cpp
-    src/savestate_thumbnails.cpp
-    src/xbrz_filter.cpp
-    src/dialog_turbo.cpp
-    src/hud_anchoring.cpp
-    src/dialogue_enhancer.cpp
+    src/gbaimp_integration.cpp
+    src/sdl_intercepts.cpp
+    src/capture_harness.cpp
+    src/runtime_ui_standard.cpp
     src/dialogue_backlog.cpp
-    src/font_resizer.cpp
-    src/dialogue_box_scaler.cpp
+    src/text_fonts_data.cpp
+    src/text_overlay/overlay_fonts.cpp
+    src/text_overlay/overlay_fonts_data.cpp
+    src/text_overlay/overlay_layout.cpp
+    src/text_overlay/overlay_raster.cpp
+    src/text_overlay/overlay_renderer.cpp
     src/ram_overlay_dispatch.cpp
     src/widescreen_adapter.cpp
+    src/music_hook.cpp
+    src/text_overlay/engine_hooks.cpp
+    src/text_overlay/battle_text.cpp
+    src/text_overlay/fade_sampler.cpp
 )
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/generated/dispatch_table.cpp")
@@ -116,6 +130,7 @@ target_include_directories(KHCOMRecomp PRIVATE
     "${GBARECOMP_ROOT}/src/armv4t"
     "${SDL2_INCLUDE_DIR}"
 )
+target_link_libraries(KHCOMRecomp PRIVATE gbaimp::gba_improvements)
 
 if(COMMAND recomp_target_launcher_ui)
     recomp_target_launcher_ui(KHCOMRecomp CONSOLE gba)
@@ -149,6 +164,7 @@ if(NOT MSVC)
         "-Wl,--wrap=SDL_UpdateTexture"
         "-Wl,--wrap=SDL_RenderCopy"
         "-Wl,--wrap=SDL_QueueAudio"
+        "-Wl,--wrap=SDL_OpenAudioDevice"
         "-Wl,--wrap=recomp_runtime_ui_create_standard"
     )
 endif()
@@ -156,35 +172,42 @@ set_target_properties(KHCOMRecomp PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 add_custom_command(TARGET KHCOMRecomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    $<TARGET_FILE:KHCOMRecomp> "${CMAKE_CURRENT_SOURCE_DIR}/KHCOMRecomp"
+    $<TARGET_FILE:KHCOMRecomp> "${CMAKE_CURRENT_SOURCE_DIR}/KHCOMRecomp${CMAKE_EXECUTABLE_SUFFIX}"
 )
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/lib/x64/SDL2.dll")
+    # SDL2.dll next to the built exe and next to the deployed copy in the repo root.
     add_custom_command(TARGET KHCOMRecomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/lib/x64/SDL2.dll"
         $<TARGET_FILE_DIR:KHCOMRecomp>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sdl2/lib/x64/SDL2.dll"
+        "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 endif()
 
 # Native C++ Unit Test Runner Target
 add_executable(khcom_unit_tests
     tests/test_all_modules.cpp
-    src/audio_dsp.cpp
-    src/perf_hud.cpp
-    src/frame_interpolator.cpp
-    src/screen_filters.cpp
-    src/input_enhancements.cpp
-    src/hd_audio_player.cpp
-    src/savestate_thumbnails.cpp
-    src/xbrz_filter.cpp
-    src/dialog_turbo.cpp
-    src/hud_anchoring.cpp
-    src/dialogue_enhancer.cpp
+    tests/test_overlay_render.cpp
+    tests/test_overlay_engine.cpp
+    src/gbaimp_integration.cpp
+    src/sdl_intercepts.cpp
+    src/capture_harness.cpp
+    src/runtime_ui_standard.cpp
     src/dialogue_backlog.cpp
-    src/font_resizer.cpp
-    src/dialogue_box_scaler.cpp
+    src/text_fonts_data.cpp
+    src/text_overlay/overlay_fonts.cpp
+    src/text_overlay/overlay_fonts_data.cpp
+    src/text_overlay/overlay_layout.cpp
+    src/text_overlay/overlay_raster.cpp
+    src/text_overlay/overlay_renderer.cpp
     src/widescreen_adapter.cpp
+    src/music_hook.cpp
+    src/text_overlay/engine_hooks.cpp
+    src/text_overlay/battle_text.cpp
+    src/text_overlay/fade_sampler.cpp
     src/ram_overlay_dispatch.cpp
     src/scaffold_stub.cpp
 )
@@ -196,6 +219,7 @@ target_include_directories(khcom_unit_tests PRIVATE
     "${GBARECOMP_ROOT}/src/gba"
     "${SDL2_INCLUDE_DIR}"
 )
+target_link_libraries(khcom_unit_tests PRIVATE gbaimp::gba_improvements)
 if(COMMAND recomp_target_launcher_ui)
     recomp_target_launcher_ui(khcom_unit_tests CONSOLE gba)
     get_target_property(_test_sources khcom_unit_tests SOURCES)
@@ -219,6 +243,29 @@ if(NOT MSVC)
         "-Wl,--wrap=SDL_UpdateTexture"
         "-Wl,--wrap=SDL_RenderCopy"
         "-Wl,--wrap=SDL_QueueAudio"
+        "-Wl,--wrap=SDL_OpenAudioDevice"
     )
 endif()
 set_target_properties(khcom_unit_tests PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+
+# ---- SDL interception, MSVC side ------------------------------------------------
+# GNU ld uses `-Wl,--wrap` (above). MSVC has no equivalent, so:
+#  * SDL_PollEvent / SDL_UpdateTexture / SDL_RenderCopy / SDL_RenderPresent /
+#    SDL_QueueAudio / SDL_OpenAudioDevice (imported from SDL2.dll) are interposed at run time by
+#    gbaimp::install_sdl_interposers() (Import Address Table patching), called from
+#    main() through khcom_install_sdl_interposers() in src/sdl_intercepts.cpp. No
+#    link option is needed.
+#  * recomp_runtime_ui_create_standard (a plain function compiled into this target
+#    from recomp-ui) is interposed by renaming the symbol while compiling that one
+#    third-party translation unit (no third-party source is modified); the host
+#    definition lives in src/runtime_ui_standard.cpp.
+if(MSVC AND COMMAND recomp_target_launcher_ui)
+    set(_khcom_rui_settings_c "${RECOMP_UI_DIR}/src/common/recomp_runtime_settings.c")
+    if(EXISTS "${_khcom_rui_settings_c}")
+        set_source_files_properties("${_khcom_rui_settings_c}" PROPERTIES
+            COMPILE_DEFINITIONS
+            "recomp_runtime_ui_create_standard=khcom_real_recomp_runtime_ui_create_standard")
+        target_compile_definitions(KHCOMRecomp PRIVATE KHCOM_RENAME_RUNTIME_UI_CREATE_STANDARD=1)
+        target_compile_definitions(khcom_unit_tests PRIVATE KHCOM_RENAME_RUNTIME_UI_CREATE_STANDARD=1)
+    endif()
+endif()

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 /**
  * Adaptive Widescreen Architecture for Kingdom Hearts: Chain of Memories
@@ -26,6 +26,17 @@ void khcom_update_widescreen_state();
 bool khcom_is_battle_active();
 void khcom_set_battle_active(bool active);
 void khcom_widescreen_notify_present();
+
+// ---- View state queries (derived from the live host view; no cached copy) ----------------------
+// True while the host presents the expanded 16:9 view (in-game view mode "16:9"). False in the
+// native 3:2 view, in which no widescreen behaviour of any kind may apply.
+bool khcom_widescreen_view_active();
+// True only while the widened picture is really shown: 16:9 view AND a battle arena. This is also
+// exactly when the HUD is anchored to the screen edges (HUD anchoring is not a separate option).
+bool khcom_widescreen_presentation_active();
+// Extra horizontal pixels currently shown beside the 240px play area: the real extra width of each
+// side while presentation is active, 0/0 in 3:2, outside battle or in menus/cutscenes.
+void khcom_effective_extra_pixels(int* left, int* right);
 uint64_t khcom_get_frame_counter();
 void khcom_compute_effective_viewport(int tex_w, int tex_h, int win_w, int win_h,
                                       SDL_Rect* out_src, SDL_Rect* out_dst,

@@ -2,7 +2,7 @@ import configparser
 import io
 import sys
 
-# 1. Verification of the 22 runtime options schema and bounds
+# 1. Verification of the runtime options schema and bounds (the HD dialogue text keys live in [HdText])
 CONFIG_SCHEMA = {
     "Video": {
         "fps_target": {"type": int, "min": 0, "max": 4, "default": 0},
@@ -11,7 +11,6 @@ CONFIG_SCHEMA = {
         "color_profile": {"type": int, "min": 0, "max": 5, "default": 0},
         "screen_mask": {"type": int, "min": 0, "max": 6, "default": 0},
         "mask_intensity": {"type": int, "min": 0, "max": 100, "default": 100},
-        "hud_anchoring": {"type": int, "min": 0, "max": 1, "default": 0},
     },
     "Audio": {
         "hd_enabled": {"type": int, "min": 0, "max": 1, "default": 1},
@@ -23,12 +22,24 @@ CONFIG_SCHEMA = {
         "limiter": {"type": int, "min": 0, "max": 1, "default": 1},
     },
     "Dialogue": {
-        "font_density": {"type": int, "min": 0, "max": 2, "default": 1},
-        "font_scale": {"type": int, "min": 0, "max": 3, "default": 2},
-        "font_style": {"type": int, "min": 0, "max": 2, "default": 1},
-        "line_capacity": {"type": int, "min": 0, "max": 2, "default": 1},
-        "soft_word_wrap": {"type": int, "min": 0, "max": 1, "default": 1},
         "backlog_enable": {"type": int, "min": 0, "max": 1, "default": 1},
+    },
+    "HdText": {
+        "hdtext_enabled": {"type": int, "min": 0, "max": 1, "default": 0},
+        "hdtext_size": {"type": int, "min": 30, "max": 200, "default": 100},
+        "hdtext_line_spacing": {"type": int, "min": 80, "max": 200, "default": 120},
+        "hdtext_letter_spacing": {"type": int, "min": -10, "max": 30, "default": 0},
+        "hdtext_wrap": {"type": int, "min": 0, "max": 1, "default": 0},
+        "hdtext_style": {"type": int, "min": 0, "max": 2, "default": 1},
+        "hdtext_shadow_offset": {"type": int, "min": 2, "max": 30, "default": 6},
+        "hdtext_outline_width": {"type": int, "min": 2, "max": 30, "default": 8},
+        "hdtext_color": {"type": int, "min": 0, "max": 6, "default": 0},
+        "hdtext_shadow_color": {"type": int, "min": 0, "max": 5, "default": 0},
+        "hdtext_outline_color": {"type": int, "min": 0, "max": 3, "default": 0},
+        "hdtext_opacity": {"type": int, "min": 20, "max": 100, "default": 100},
+        "hdtext_padding": {"type": int, "min": 0, "max": 80, "default": 0},
+        "hdtext_auto_fit": {"type": int, "min": 0, "max": 1, "default": 1},
+        "hdtext_min_size": {"type": int, "min": 30, "max": 120, "default": 50},
     },
     "Controls": {
         "analog_mode": {"type": int, "min": 0, "max": 2, "default": 1},
@@ -57,6 +68,7 @@ xbrz_scale=2
 color_profile=3
 screen_mask=1
 mask_intensity=85
+; legacy key (HUD anchoring now follows the 16:9 view mode); must stay loadable
 hud_anchoring=1
 
 [Audio]
@@ -68,13 +80,35 @@ stereo_width=120
 anti_aliasing=1
 limiter=1
 
+; legacy in-engine enhanced text keys (removed feature): must stay parseable and must NOT enable anything
 [Dialogue]
+text_mode=1
+font_family=1
+font_size=90
 font_density=1
 font_scale=2
 font_style=1
-line_capacity=1
+line_capacity=2
 soft_word_wrap=1
 backlog_enable=1
+
+[HdText]
+hdtext_font=Humanist Sans
+hdtext_enabled=1
+hdtext_size=100
+hdtext_line_spacing=120
+hdtext_letter_spacing=0
+hdtext_wrap=1
+hdtext_style=1
+hdtext_shadow_offset=6
+hdtext_outline_width=8
+hdtext_color=0
+hdtext_shadow_color=0
+hdtext_outline_color=0
+hdtext_opacity=100
+hdtext_padding=0
+hdtext_auto_fit=1
+hdtext_min_size=50
 
 [Controls]
 analog_mode=2
@@ -97,7 +131,7 @@ perf_theme=0
 
 def test_config_keys_count():
     total_keys = sum(len(keys) for keys in CONFIG_SCHEMA.values())
-    assert total_keys == 32, f"Expected exactly 32 options, found {total_keys}"
+    assert total_keys == 41, f"Expected exactly 41 options, found {total_keys}"
     print(f"[PASS] Total runtime configuration options count verified: {total_keys} keys")
 
 def test_ini_deserialization():
@@ -113,68 +147,28 @@ def test_ini_deserialization():
             assert spec["min"] <= val <= spec["max"], f"Value {val} for '{key}' out of range [{spec['min']}, {spec['max']}]"
             parsed_count += 1
             
-    assert parsed_count == 32
+    assert parsed_count == 41
     print(f"[PASS] INI serialization and deserialization verified for all {parsed_count} options")
 
-def should_merge_newline_py(prev_char, next_char, soft_wrap=True, case_aware=True):
-    if not soft_wrap:
-        return False
-    if next_char.isspace():
-        return False
-    is_terminator = prev_char in ".!?:;"
-    if not case_aware:
-        return not is_terminator
-    if not is_terminator and next_char.islower():
-        return True
-    if (prev_char == ',' or prev_char.isalpha()) and next_char.isupper():
-        return True
-    if is_terminator and next_char.isupper():
-        return False
-    return not is_terminator
+LEGACY_TEXT_KEYS = ["text_mode", "font_family", "font_size", "font_density", "font_scale", "font_style",
+                    "line_capacity", "soft_word_wrap"]
 
-def process_dialogue_text_py(raw_text, max_len=34, soft_wrap=True, case_aware=True):
-    if not soft_wrap or not raw_text:
-        return raw_text
-    result = []
-    current_line_len = 0
-    for i, c in enumerate(raw_text):
-        if c in ('\n', '\r'):
-            prev_c = raw_text[i - 1] if i > 0 else ' '
-            next_c = raw_text[i + 1] if i + 1 < len(raw_text) else ' '
-            if should_merge_newline_py(prev_c, next_c, soft_wrap, case_aware) and current_line_len < max_len:
-                if result and result[-1] != ' ':
-                    result.append(' ')
-                    current_line_len += 1
-            else:
-                result.append('\n')
-                current_line_len = 0
-        else:
-            result.append(c)
-            current_line_len += 1
-            if current_line_len >= max_len and c == ' ':
-                result[-1] = '\n'
-                current_line_len = 0
-    return "".join(result)
-
-def test_dialogue_enhancer_logic():
-    raw = "Where are we?\nDonald? Goofy?"
-    processed = process_dialogue_text_py(raw)
-    assert "\n" in processed, "Sentence terminator '?' followed by uppercase should NOT merge newline"
-
-    raw2 = "Ahead lies what you seek,\nbut to claim it, you must lose."
-    processed2 = process_dialogue_text_py(raw2)
-    assert "seek,\nbut" not in processed2, "Continuation after comma with lowercase should merge newline into single space"
-    assert "seek, but" in processed2, "Text should contain merged 'seek, but'"
-
-    # Donald in-game dialogue case (verifying "magic!" merges onto line 2 in compact/high-density)
-    raw_donald = "It must be a Heartless!\nLet's see how it handles my\nmagic!"
-    proc_donald_orig = process_dialogue_text_py(raw_donald, max_len=26)
-    assert "handles my\nmagic!" in proc_donald_orig, "Original 26 char width should preserve authentic 3-line GBA layout"
-
-    proc_donald_compact = process_dialogue_text_py(raw_donald, max_len=34)
-    assert "handles my magic!" in proc_donald_compact, "Compact 34 char width must merge 'magic!' onto line 2"
-
-    print("[PASS] Dialogue enhancer soft word-wrapping grammar heuristics verified")
+def test_legacy_text_keys_tolerated_and_never_written():
+    # old files (and the user's current one: font_scale=2, line_capacity=2) still parse...
+    cp = configparser.ConfigParser()
+    cp.read_string(SAMPLE_INI)
+    for k in LEGACY_TEXT_KEYS:
+        assert cp.has_option("Dialogue", k) and cp.getint("Dialogue", k) >= 0
+    # ...but the schema (what the game writes back) has none of them, and the new overlay defaults to Original text
+    for k in LEGACY_TEXT_KEYS:
+        assert k not in CONFIG_SCHEMA["Dialogue"] and k not in CONFIG_SCHEMA["HdText"]
+    assert CONFIG_SCHEMA["HdText"]["hdtext_enabled"]["default"] == 0
+    # the C++ source must not map legacy keys to anything but the ignore branch
+    src = open("src/game_config.cpp", encoding="utf-8").read()
+    assert 'key == "text_mode" || key == "font_family"' in src and "parsed and ignored" in src
+    for k in LEGACY_TEXT_KEYS:
+        assert f'file << "{k}=' not in src, f"legacy key {k} must never be written back"
+    print("[PASS] Legacy text keys parse, are ignored, and are never written back")
 
 def wrap_text_py(text, max_px, scale=1):
     char_w = 6 * scale
@@ -300,6 +294,22 @@ def test_widescreen_adapter_hooks():
     assert unwrapped_x == -12, f"Expected signed x=-12, got {unwrapped_x}"
 
     print("[PASS] Adaptive Widescreen adapter verified: seam suppression, HUD corner shifts, and 9-bit OAM unwrap logic valid")
+
+def test_hud_anchoring_is_not_a_separate_option():
+    import os
+    src_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+    with open(os.path.join(src_dir, "game_config.cpp"), "r", encoding="utf-8") as f:
+        cfg = f.read()
+    # No UI item / getter / setter / writer for the old option; the legacy ini key is only tolerated.
+    assert "video.hud_anchoring" not in cfg, "HUD anchoring must not be a separate UI option"
+    assert "kHudAnchorChoices" not in cfg
+    assert 'file << "hud_anchoring=' not in cfg, "legacy key must not be written back"
+    assert 'key == "hud_anchoring"' in cfg, "legacy key must still be parsed (ignored)"
+    with open(os.path.join(src_dir, "widescreen_adapter.cpp"), "r", encoding="utf-8") as f:
+        ws = f.read()
+    assert "HudAnchorMode::WidescreenAnchored" in ws and "settings().mode ==" not in ws,         "anchoring must be derived from the view state, not read from a user setting"
+    assert "khcom_widescreen_presentation_active" in ws
+    print("[PASS] HUD anchoring is derived from the 16:9 view mode (no separate option, legacy key tolerated)")
 
 def test_audio_dsp_algorithms():
     import math
@@ -543,39 +553,6 @@ def test_perf_hud_options():
 
     print("[PASS] Performance HUD unit tests: display modes, screen docking positions, and themes verified")
 
-def test_text_resizing_pipeline():
-    import os
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
-    from dialogue_text_tool import DialogueTextTool
-
-    tool = DialogueTextTool()
-    
-    # 1. Bytecode decompile and compile roundtrip test
-    original_text = "Donald? Goofy?[NEWLINE]Where are you?[WAIT_KEY] [CLEAR_PAGE]Ahead lies what you seek."
-    compiled = tool.compile_text(original_text)
-    assert len(compiled) > 0
-    decompiled, _ = tool.decompile_bytecode(compiled)
-    assert "[NEWLINE]" in decompiled
-    assert "[WAIT_KEY]" in decompiled
-    assert "[CLEAR_PAGE]" in decompiled
-    assert "Donald? Goofy?" in decompiled
-    assert "Ahead lies what you seek." in decompiled
-
-    # 2. Word wrapping recalculation (26 cols to 34 cols)
-    wrapped_34 = tool.recalculate_word_wrapping("To find is to lose, and to lose is to find.[NEWLINE]That is the rule here in Castle Oblivion.", max_chars_per_line=34)
-    lines_34 = wrapped_34.split("[NEWLINE]")
-    for l in lines_34:
-        assert len(l) <= 34, f"Line exceeded 34 cols: {l}"
-
-    # 3. Nine-slice dialogue box expansion (28 tiles to 34 tiles)
-    base_tiles = 28
-    expanded_tiles = 34
-    assert expanded_tiles * 8 == 272, "Expanded 34-tile dialogue box must be 272 pixels"
-    assert base_tiles * 8 == 224, "Standard 28-tile dialogue box must be 224 pixels"
-
-    print("[PASS] Text resizing pipeline: bytecode roundtrip, wrap recalculation, and 9-slice box geometry verified")
-
 def test_cutscene_dialogue_bounds_and_lengths():
     import os
     import re
@@ -613,8 +590,8 @@ def test_cutscene_dialogue_bounds_and_lengths():
 
 if __name__ == "__main__":
     test_config_keys_count()
+    test_legacy_text_keys_tolerated_and_never_written()
     test_ini_deserialization()
-    test_dialogue_enhancer_logic()
     test_dialogue_backlog_word_wrap()
     test_screen_filter_aspect_invalidation()
     test_ram_overlay_dispatch_coverage()
@@ -624,11 +601,11 @@ if __name__ == "__main__":
     test_frame_interpolator_cadence()
     test_input_enhancements_analog_and_walk()
     test_hud_anchoring_bounds_and_oam()
+    test_hud_anchoring_is_not_a_separate_option()
     test_dialog_turbo_cadence()
     test_xbrz_scaling_ratios()
     test_savestate_thumbnail_headers()
     test_perf_hud_options()
-    test_text_resizing_pipeline()
     test_cutscene_dialogue_bounds_and_lengths()
     print()
     print("ALL 18 AUTOMATED VERIFICATION SUITES PASSED SUCCESSFULLY.")
