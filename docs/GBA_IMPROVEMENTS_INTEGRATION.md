@@ -10,7 +10,7 @@ enhancement modules and recompilation helper scripts.
 
 | Module | Header |
 |---|---|
-| Pixel-art upscaler (Scale2x/EPX-style, **not** xBRZ; the host menu still labels it "xBRZ") | `gbaimp/pixel_art_upscaler.h` (`gbaimp/xbrz_filter.h` = deprecated aliases, what `game_config.cpp` still includes) |
+| Pixel-art upscaler (Scale2x/EPX-style, **not** xBRZ; the host menu still labels it "xBRZ") | `gbaimp/pixel_art_upscaler.h` (`gbaimp/xbrz_filter.h` is a deprecated alias header, no longer used here) |
 | Screen filters (color profiles, masks) | `gbaimp/screen_filters.h` |
 | Frame interpolation / frame pacing | `gbaimp/frame_interpolator.h` |
 | Audio DSP + audio block pipeline + SDL pull-callback wrapping | `gbaimp/audio_dsp.h`, `gbaimp/audio_pipeline.h`, `gbaimp/audio_device.h` |

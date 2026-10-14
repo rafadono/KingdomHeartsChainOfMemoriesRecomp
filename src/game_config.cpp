@@ -6,7 +6,7 @@
 #include "gbaimp/screen_filters.h"
 #include "gbaimp/input_enhancements.h"
 #include "gbaimp/hd_audio_player.h"
-#include "gbaimp/xbrz_filter.h"
+#include "gbaimp/pixel_art_upscaler.h"
 #include "gbaimp/dialog_turbo.h"
 #include "gbaimp/hud_anchoring.h"
 #include "text_overlay/overlay_types.h"
@@ -792,7 +792,7 @@ int ui_get_callback(const char* key, int* value_out) {
     auto& hud = gbaimp::PerfHud::instance();
     auto& interp = gbaimp::FrameInterpolator::instance();
     auto& filters = gbaimp::ScreenFilters::instance();
-    auto& xbrz = gbaimp::XbrzUpscaler::instance();
+    auto& xbrz = gbaimp::PixelArtUpscaler::instance();
     auto& input = gbaimp::InputEnhancements::instance();
     auto& hd_audio = gbaimp::HdAudioPlayer::instance();
     auto& turbo = gbaimp::DialogTurbo::instance();
@@ -814,7 +814,7 @@ int ui_get_callback(const char* key, int* value_out) {
         return 1;
     }
     if (std::strcmp(key, "video.xbrz_scale") == 0) {
-        int idx = (xbrz.scale() == gbaimp::XbrzScale::None) ? 0 : (static_cast<int>(xbrz.scale()) - 1);
+        int idx = (xbrz.scale() == gbaimp::UpscaleScale::None) ? 0 : (static_cast<int>(xbrz.scale()) - 1);
         *value_out = idx;
         return 1;
     }
@@ -985,7 +985,7 @@ static void save_khcom_config_impl() {
     auto& hud = gbaimp::PerfHud::instance();
     auto& interp = gbaimp::FrameInterpolator::instance();
     auto& filters = gbaimp::ScreenFilters::instance();
-    auto& xbrz = gbaimp::XbrzUpscaler::instance();
+    auto& xbrz = gbaimp::PixelArtUpscaler::instance();
     auto& input = gbaimp::InputEnhancements::instance();
     auto& hd_audio = gbaimp::HdAudioPlayer::instance();
     auto& turbo = gbaimp::DialogTurbo::instance();
@@ -994,7 +994,7 @@ static void save_khcom_config_impl() {
     file << "[Video]\n";
     file << "fps_target=" << static_cast<int>(interp.settings().mode) << "\n";
     file << "motion_smoothing=" << static_cast<int>(interp.settings().smoothing) << "\n";
-    int xbrz_idx = (xbrz.scale() == gbaimp::XbrzScale::None) ? 0 : (static_cast<int>(xbrz.scale()) - 1);
+    int xbrz_idx = (xbrz.scale() == gbaimp::UpscaleScale::None) ? 0 : (static_cast<int>(xbrz.scale()) - 1);
     file << "xbrz_scale=" << xbrz_idx << "\n";
     file << "color_profile=" << static_cast<int>(filters.settings().color_profile) << "\n";
     file << "screen_mask=" << static_cast<int>(filters.settings().mask_type) << "\n";
@@ -1051,7 +1051,7 @@ int ui_set_callback(const char* key, int value) {
     auto& hud = gbaimp::PerfHud::instance();
     auto& interp = gbaimp::FrameInterpolator::instance();
     auto& filters = gbaimp::ScreenFilters::instance();
-    auto& xbrz = gbaimp::XbrzUpscaler::instance();
+    auto& xbrz = gbaimp::PixelArtUpscaler::instance();
     auto& input = gbaimp::InputEnhancements::instance();
     auto& hd_audio = gbaimp::HdAudioPlayer::instance();
     auto& turbo = gbaimp::DialogTurbo::instance();
@@ -1072,7 +1072,7 @@ int ui_set_callback(const char* key, int value) {
         interp.set_smoothing(static_cast<gbaimp::MotionSmoothingMode>(value));
         handled = true;
     } else if (std::strcmp(key, "video.xbrz_scale") == 0) {
-        gbaimp::XbrzScale scale = (value <= 0) ? gbaimp::XbrzScale::None : static_cast<gbaimp::XbrzScale>(value + 1);
+        gbaimp::UpscaleScale scale = (value <= 0) ? gbaimp::UpscaleScale::None : static_cast<gbaimp::UpscaleScale>(value + 1);
         xbrz.set_scale(scale);
         handled = true;
     } else if (std::strcmp(key, "video.color_profile") == 0) {
