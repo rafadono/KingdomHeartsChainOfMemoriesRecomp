@@ -3,6 +3,7 @@
 
 #include "ram_overlay_dispatch.h"
 #include "runtime_arm.h"
+#include "gbaimp/ram_dispatch_gbarecomp.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -61798,41 +61799,4 @@ constexpr size_t kRamDispatchCount = sizeof(kRamDispatchEntries) / sizeof(kRamDi
 
 } // namespace
 
-extern "C" int khcom_ram_dispatch_hook(uint32_t pc, int thumb) {
-    uint32_t target_pc = pc & ~1u;
-    int lo = 0;
-    int hi = static_cast<int>(kRamDispatchCount) - 1;
-    while (lo <= hi) {
-        int mid = lo + (hi - lo) / 2;
-        const auto& e = kRamDispatchEntries[mid];
-        if (e.pc < target_pc) {
-            lo = mid + 1;
-        } else if (e.pc > target_pc) {
-            hi = mid - 1;
-        } else {
-            if (e.thumb == thumb) {
-                e.fn();
-                return 1;
-            }
-            if (mid > 0 && kRamDispatchEntries[mid - 1].pc == target_pc && kRamDispatchEntries[mid - 1].thumb == thumb) {
-                kRamDispatchEntries[mid - 1].fn();
-                return 1;
-            }
-            if (mid + 1 < static_cast<int>(kRamDispatchCount) && kRamDispatchEntries[mid + 1].pc == target_pc && kRamDispatchEntries[mid + 1].thumb == thumb) {
-                kRamDispatchEntries[mid + 1].fn();
-                return 1;
-            }
-            return 0;
-        }
-    }
-    return 0;
-}
-
-void khcom_install_ram_dispatch() {
-    static bool s_installed = false;
-    if (!s_installed) {
-        g_runtime_ram_dispatch_hook = khcom_ram_dispatch_hook;
-        s_installed = true;
-        std::printf("[KHCOMRecomp] Native RAM overlay dispatcher installed (%zu functions registered)\n", kRamDispatchCount);
-    }
-}
+GBAIMP_DEFINE_RAM_DISPATCH_N(khcom, "KHCOMRecomp", kRamDispatchEntries, kRamDispatchCount)
