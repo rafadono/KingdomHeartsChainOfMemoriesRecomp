@@ -244,6 +244,8 @@ if(NOT MSVC)
         "-Wl,--wrap=SDL_RenderCopy"
         "-Wl,--wrap=SDL_QueueAudio"
         "-Wl,--wrap=SDL_OpenAudioDevice"
+
+        "-Wl,--wrap=recomp_runtime_ui_create_standard"
     )
 endif()
 set_target_properties(khcom_unit_tests PROPERTIES CXX_SCAN_FOR_MODULES OFF)
