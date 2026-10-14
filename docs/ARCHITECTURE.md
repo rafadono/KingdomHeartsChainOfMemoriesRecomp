@@ -24,8 +24,8 @@ compiled in). `run_game()` resets every game-owned hook at start, so hooks are (
 | `main.cpp` | entry point (above); injects the capture-harness arguments |
 | `game_config.{h,cpp}` | `RunOptions` (view modes 3:2 / 16:9, assist tools, UI callbacks), the settings schema (menu items, `khcom_config.ini` load/save, legacy keys), live setting changes for the harness |
 | `gbaimp_integration.{h,cpp}` | registers the library hooks (`save_settings`, `is_input_blocked`, `frame_counter`) and the two HUD zones |
-| `sdl_intercepts.cpp` | the six SDL handlers (`PollEvent`, `UpdateTexture`, `RenderCopy`, `RenderPresent`, `QueueAudio`, `OpenAudioDevice`) and their registration |
-| `runtime_ui_standard.{h,cpp}` | rewrites the stock settings-menu config (view-mode labels, no RESUME row) and keeps the menu pointer |
+| `sdl_intercepts.cpp` | this game's callbacks for the library's six generic SDL handlers (`PollEvent`, `UpdateTexture`, `RenderCopy`, `RenderPresent`, `QueueAudio`, `OpenAudioDevice`; `gbaimp/game_host.h`) and their registration |
+| `runtime_ui_standard.{h,cpp}` | view-mode labels for the stock settings menu (the rewrite is `gbaimp/runtime_ui_glue.h`, no RESUME row) and the menu pointer |
 | `runtime_ui_imgui_enhanced.cpp` | replacement of recomp-ui's ImGui menu renderer (draggable window); compiled instead of `runtime_ui_imgui.cpp` |
 | `widescreen_adapter.{h,cpp}` | battle detection from mode-switch function entries, view-mode policy (`apply_view_policy()`), PPU providers (tilemap, BG X, OBJ X), effective viewport, function-entry hook chain |
 | `music_hook.{h,cpp}` | m4a song start/stop observation that drives `gbaimp::HdAudioPlayer` |
@@ -68,7 +68,7 @@ decodes OAM glyph sprites, disables their rendering for the matched frame, and c
 
 
 ### Audio
-gbarecomp opens a mono S16 65536 Hz SDL device with a pull callback. `khcom_open_audio_device_intercept` forwards to `gbaimp::open_audio_device_processed`, which wraps the
+gbarecomp opens a mono S16 65536 Hz SDL device with a pull callback. the library's `open_audio_device` handler forwards to `gbaimp::open_audio_device_processed`, which wraps the
 callback: after gbarecomp fills the buffer, `process_audio_block` mixes the HD track, applies volumes and the DSP chain on SDL's audio thread. `music_hook.cpp` (called from the
 function-entry hook on the emulation thread) calls `HdAudioPlayer::trigger_song` when the game starts a mapped m4a song. The original music is not muted.
 

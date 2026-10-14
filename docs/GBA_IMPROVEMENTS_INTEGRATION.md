@@ -31,8 +31,8 @@ layer (`gbaimp/sdl_interpose.h`, see "SDL intercepts" below).
 
 - `game_config.*`: runtime configuration/UI, `khcom_config.ini`
 - `gbaimp_integration.*`: registration of hooks and HUD zones (see below)
-- `sdl_intercepts.cpp`: the game's SDL handlers and their registration (see below)
-- `runtime_ui_standard.*`: view-mode labels / feature set of the in-game settings menu (see below)
+- `sdl_intercepts.cpp`: the game's callbacks for the library's generic SDL handlers (`gbaimp/game_host.h`) and their registration (see below)
+- `runtime_ui_standard.*`: view-mode labels of the in-game settings menu and the menu pointer; the interposition itself is `gbaimp/runtime_ui_glue.h` (see below)
 - `music_hook.*` (HD music trigger, below), `capture_harness.*` ([CAPTURE_HARNESS.md](CAPTURE_HARNESS.md)), `text_overlay/` (HD dialogue text, [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md) / [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md))
 - `dialogue_backlog.*`, `widescreen_adapter.*`, `runtime_ui_imgui_enhanced.cpp`, `ram_overlay_dispatch.*`, `main.cpp`
 - Game-specific Python tools: `tools/update_symbols.py`, `tools/import_decomp_symbols.py`, `tools/dialogue_text_tool.py`, `tools/gen_font_data.py`, `tools/overlay_png_to_ppm.py`, `tools/capture/*`
@@ -123,7 +123,7 @@ There is ONE design for both platforms, implemented by the library's `gbaimp/sdl
   (never through the public `SDL_X` symbol, which would re-enter the handler).
 - `gbaimp::set_sdl_handlers(h)` registers the handlers; a null entry means "do not interpose".
 
-`src/sdl_intercepts.cpp` holds the six game handlers (`khcom_poll_event_intercept`, ...). They are
+The six handlers (game image detection, colour correction, letterbox, mask, interpolation, performance HUD, audio) are generic and live in the library (`gbaimp/game_host.h`, `gbaimp::install_game_host()`). `src/sdl_intercepts.cpp` only fills a `gbaimp::GameHostConfig` with this game's callbacks (widescreen state, RAM dispatch, dialogue backlog, capture harness, text overlay, music hook statistics). They are
 identical on both platforms. Only the way SDL calls reach them differs:
 
 | | Linux / GNU ld | Windows / MSVC |
@@ -142,13 +142,13 @@ gbarecomp opens its SDL device (`HostWindow`, `SDL_OpenAudioDevice`) as **mono s
 SDL audio *pull callback* (`gba_audio_callback`) fed by a rate-adaptive bridge. `SDL_QueueAudio` is only used
 when `GBARECOMP_AUDIO_DIRECT` is set, so an `SDL_QueueAudio` intercept alone never sees audio in normal play.
 
-`khcom_open_audio_device_intercept` (registered as `open_audio_device` on both platforms; Linux link flag
+The library's `open_audio_device` handler (registered on both platforms; Linux link flag
 `-Wl,--wrap=SDL_OpenAudioDevice` in `CMakeLists.txt` for both executables, Windows IAT slot) forwards to
 `gbaimp::open_audio_device_processed`. It replaces the callback with a trampoline that calls gbarecomp's callback
 first and then runs `process_audio_block(buffer, len/2, channels, obtained_freq)` on SDL's audio thread: HD
 music mix, SFX/BGM/master volume and the DSP chain (EQ presets, anti-aliasing, limiter). The rate used is the
 *obtained* device rate (it can differ from 65536 Hz when SDL cannot open that rate). In direct-queue mode
-(`GBARECOMP_AUDIO_DIRECT=1`) `khcom_queue_audio_intercept` calls `gbaimp::queue_audio_processed`, which uses the
+(`GBARECOMP_AUDIO_DIRECT=1`) the library's `queue_audio` handler calls `gbaimp::queue_audio_processed`, which uses the
 channel count and rate the device was opened with (mono, not the old stereo assumption).
 
 Real-time safety: the trampoline does not allocate, lock or touch files. Settings changed from the in-game menu
@@ -242,10 +242,10 @@ menu pointer (`khcom::g_active_runtime_ui`) for its open/close hotkeys.
 
 gbarecomp (`RunOptions`, `runtime.cpp`) and recomp-ui expose no hook for this: the labels, features and view
 modes are filled in inside `run_game()` and the created `RecompRuntimeUi*` is only stored in a local. So the
-call itself is interposed, with the same body on both platforms (`khcom::create_standard_ui` in
-`src/runtime_ui_standard.cpp`):
+call itself is interposed, with the same body on both platforms (`gbaimp::create_standard_ui` in the library's
+`gbaimp/runtime_ui_glue.h`, configured by `khcom::runtime_ui_glue_options()` in `src/runtime_ui_standard.cpp`):
 
-- Linux / GNU ld: `-Wl,--wrap=recomp_runtime_ui_create_standard` and `__wrap_...` in `game_config.cpp`.
+- Linux / GNU ld: `-Wl,--wrap=recomp_runtime_ui_create_standard` and the `GBAIMP_RUNTIME_UI_WRAP` macro in `runtime_ui_standard.cpp`.
 - Windows / MSVC: this function is not a DLL import (it is compiled into the executable from recomp-ui), so
   IAT patching does not apply. `CMakeLists.txt` instead compiles recomp-ui's `recomp_runtime_settings.c` with
   `-Drecomp_runtime_ui_create_standard=khcom_real_recomp_runtime_ui_create_standard` (a per-source-file

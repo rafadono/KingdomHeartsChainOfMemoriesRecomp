@@ -1380,13 +1380,3 @@ gbarecomp::RunOptions create_run_options() {
 
 } // namespace khcom
 
-#if defined(GBARECOMP_RUNTIME_UI) && (defined(__GNUC__) || defined(__clang__))
-// GNU ld: `-Wl,--wrap=recomp_runtime_ui_create_standard` (CMakeLists.txt). On MSVC the same
-// function is interposed by a compile-time symbol rename, see runtime_ui_standard.cpp.
-extern "C" {
-RecompRuntimeUi* __real_recomp_runtime_ui_create_standard(const RecompRuntimeUiStandardConfig* standard);
-RecompRuntimeUi* __wrap_recomp_runtime_ui_create_standard(const RecompRuntimeUiStandardConfig* standard) {
-    return khcom::create_standard_ui(standard, &__real_recomp_runtime_ui_create_standard);
-}
-}
-#endif
