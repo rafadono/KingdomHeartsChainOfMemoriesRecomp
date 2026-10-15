@@ -166,6 +166,20 @@ static void test_music_hook() {
         assert(found.mplay_all_stop == kM4aMPlayAllStop && found.song_table == kM4aSongTable);
         assert(found.song_table_entries == kM4aSongTableEntries);
 
+        // The one-call start-up used by hd_music_setup() takes the locator path on the real ROM (the fallback
+        // table is only for ROMs the locator does not recognise) and ends with the same addresses.
+        gbaimp::M4aMusicHook setup_hook;
+        gbaimp::M4aSetupOptions opts;
+        opts.fallback = &addr;
+        assert(setup_hook.setup_from_rom(rom.data(), rom.size(), opts) == gbaimp::M4aSetupSource::Locator);
+        assert(setup_hook.setup_source() == gbaimp::M4aSetupSource::Locator);
+        assert(setup_hook.addresses().song_num_start == kM4aSongNumStart);
+        assert(setup_hook.addresses().song_table == kM4aSongTable);
+        // An image the locator cannot read falls back to the game's table.
+        std::vector<uint8_t> blank(0x1000, 0);
+        gbaimp::M4aMusicHook fallback_hook;
+        assert(fallback_hook.setup_from_rom(blank.data(), blank.size(), opts) == gbaimp::M4aSetupSource::Fallback);
+        assert(fallback_hook.addresses().song_num_stop == kM4aSongNumStop);
     }
     std::cout << "[PASS] C++ music hook (m4a song trigger) unit test passed" << std::endl;
 }

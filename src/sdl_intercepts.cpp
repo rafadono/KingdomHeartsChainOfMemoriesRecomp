@@ -12,6 +12,7 @@
 #include "gbaimp/widescreen.h"
 #include "gbaimp/capture_harness.h"
 #include "gbaimp/text_history.h"
+#include "gbaimp/m4a_music_hook.h"
 #include "gbaimp_integration.h"
 #include "text_overlay/engine_hooks.h"
 #include "ram_overlay_dispatch.h"
@@ -60,7 +61,7 @@ void before_present(SDL_Renderer* renderer) {
     gbaimp::capture::on_before_present(renderer);   // inert unless a KHCOM_* harness variable is set
 }
 
-void print_stats(const char* tag) { khcom::hd_music_print_stats(tag); }
+void print_stats(const char* tag) { gbaimp::M4aMusicHook::instance().print_stats(tag); }
 
 gbaimp::GameHostConfig make_config() {
     gbaimp::GameHostConfig c;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gbaimp/m4a_music_hook.h"
+
 #include <cstdint>
 
 namespace khcom {
@@ -29,7 +31,7 @@ constexpr uint32_t kM4aSongTableEntries = 962u;   // entries until the first inv
 // once done; returns immediately while no cartridge is available yet.
 void hd_music_setup();
 
-// "[tag] m4a song hook: starts=... hd_mapped=... hd_stops=..." (the host's diagnostics line).
-void hd_music_print_stats(const char* tag);
+// How the m4a addresses were obtained (Locator in a normal run, Fallback = the constants above).
+gbaimp::M4aSetupSource hd_music_setup_source();
 
 } // namespace khcom

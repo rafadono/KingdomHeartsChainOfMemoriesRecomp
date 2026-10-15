@@ -56,6 +56,8 @@ void register_gbaimp_integration() {
     anchoring.add_zone(deck);
 }
 
+static gbaimp::M4aSetupSource s_setup_source = gbaimp::M4aSetupSource::None;
+
 void hd_music_setup() {
     static bool s_done = false;
     if (s_done) return;
@@ -63,29 +65,22 @@ void hd_music_setup() {
     if (!bus || !bus->rom_ptr() || bus->rom_size() == 0) return;   // not mapped yet: try again at the next call
     s_done = true;
 
-    gbaimp::M4aMusicHook& hook = gbaimp::M4aMusicHook::instance();
-    hook.set_log_tag("khcom");
-    hook.set_logging_from_env("KHCOM_");   // KHCOM_LOG_INTERPOSE=1 prints the first song starts
-    if (!hook.locate(bus->rom_ptr(), bus->rom_size())) {
-        gbaimp::M4aAddresses a;
-        a.song_num_start = kM4aSongNumStart;
-        a.song_num_start_or_change = kM4aSongNumStartOrChange;
-        a.song_num_start_or_continue = kM4aSongNumStartOrContinue;
-        a.song_num_stop = kM4aSongNumStop;
-        a.mplay_all_stop = kM4aMPlayAllStop;
-        a.song_table = kM4aSongTable;
-        a.song_table_entries = kM4aSongTableEntries;
-        hook.set_addresses(a);
-    }
-    hook.set_bus_reader(&bus_read_u32);   // song table lookups through the guest bus
+    gbaimp::M4aAddresses known;   // fallback when the locator does not find the group
+    known.song_num_start = kM4aSongNumStart;
+    known.song_num_start_or_change = kM4aSongNumStartOrChange;
+    known.song_num_start_or_continue = kM4aSongNumStartOrContinue;
+    known.song_num_stop = kM4aSongNumStop;
+    known.mplay_all_stop = kM4aMPlayAllStop;
+    known.song_table = kM4aSongTable;
+    known.song_table_entries = kM4aSongTableEntries;
+    gbaimp::M4aSetupOptions opts;
+    opts.log_tag = "khcom";
+    opts.env_prefix = "KHCOM_";   // KHCOM_LOG_INTERPOSE=1 prints the first song starts
+    opts.fallback = &known;
+    opts.bus_read_u32 = &bus_read_u32;   // song table lookups through the guest bus
+    s_setup_source = gbaimp::M4aMusicHook::instance().setup_from_rom(bus->rom_ptr(), bus->rom_size(), opts);
 }
 
-void hd_music_print_stats(const char* tag) {
-    const gbaimp::M4aHookStats m = gbaimp::M4aMusicHook::instance().stats();
-    std::fprintf(stderr, "[%s] m4a song hook: starts=%llu hd_mapped=%llu hd_stops=%llu\n", tag,
-                 static_cast<unsigned long long>(m.starts),
-                 static_cast<unsigned long long>(m.mapped_triggers),
-                 static_cast<unsigned long long>(m.hd_stops));
-}
+gbaimp::M4aSetupSource hd_music_setup_source() { return s_setup_source; }
 
 } // namespace khcom

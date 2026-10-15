@@ -179,9 +179,10 @@ and outside-click closing are unchanged.
 `HdAudioPlayer::trigger_song` is driven from the game's own MusicPlayer2000 ("m4a") calls, through the
 function-entry hook that `gbaimp::Widescreen` chains (one owner, re-installed every frame
 because gbarecomp resets `g_runtime_fn_entry_hook` at each run start); `widescreen_adapter.cpp` forwards `pc` and `R0` to
-`M4aMusicHook::on_function_entry()`. `hd_music_setup()` (`gbaimp_integration.cpp`) locates the five entry points in the
-cartridge image by their code shape once it is mapped, with the addresses below as the fallback, and gives the hook the guest bus
-reader for the song table (the unit test checks that the locator finds exactly these addresses in the USA ROM).
+`M4aMusicHook::on_function_entry()`. `hd_music_setup()` (`gbaimp_integration.cpp`) is one `M4aMusicHook::setup_from_rom()` call: it locates the five entry points in the
+cartridge image by their code shape once it is mapped, uses the addresses below as the fallback table, and gives the hook the guest bus
+reader for the song table; the returned `M4aSetupSource` is kept (`hd_music_setup_source()`) and the statistics line comes from `M4aMusicHook::print_stats()`.
+The unit test checks that the locator finds exactly these addresses in the USA ROM and that the setup reports `Locator`.
 
 | Address | Function (m4a library) | Argument |
 |---|---|---|
