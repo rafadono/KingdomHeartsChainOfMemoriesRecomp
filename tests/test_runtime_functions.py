@@ -165,7 +165,10 @@ def test_legacy_text_keys_tolerated_and_never_written():
     assert CONFIG_SCHEMA["HdText"]["hdtext_enabled"]["default"] == 0
     # the C++ source must not map legacy keys to anything but the ignore branch
     src = open("src/game_config.cpp", encoding="utf-8").read()
-    assert 'key == "text_mode" || key == "font_family"' in src and "parsed and ignored" in src
+    # ...and the registry ignores them: they are listed as ignored ini keys / ids, never as settings
+    assert "kLegacyTextIniKeys" in src and "add_ignored_ini_key(key)" in src and "add_ignored_id(id)" in src
+    for k in LEGACY_TEXT_KEYS:
+        assert f'"{k}"' in src.split("kLegacyTextIniKeys")[1].split("};")[0], f"legacy key {k} must be in the ignored list"
     for k in LEGACY_TEXT_KEYS:
         assert f'file << "{k}=' not in src, f"legacy key {k} must never be written back"
     print("[PASS] Legacy text keys parse, are ignored, and are never written back")
@@ -306,7 +309,9 @@ def test_hud_anchoring_is_not_a_separate_option():
     assert "video.hud_anchoring" not in cfg, "HUD anchoring must not be a separate UI option"
     assert "kHudAnchorChoices" not in cfg
     assert 'file << "hud_anchoring=' not in cfg, "legacy key must not be written back"
-    assert 'key == "hud_anchoring"' in cfg, "legacy key must still be parsed (ignored)"
+    lib_settings = os.path.join(os.path.dirname(src_dir), "external", "gba-improvements", "src", "host_settings.cpp")
+    with open(lib_settings, "r", encoding="utf-8") as f:
+        assert 'add_ignored_ini_key("hud_anchoring")' in f.read(), "legacy key must still be parsed (ignored) by the registry"
     with open(os.path.join(src_dir, "widescreen_adapter.cpp"), "r", encoding="utf-8") as f:
         ws = f.read()
     assert "settings().mode ==" not in ws, "anchoring must be derived from the view state, not read from a user setting"

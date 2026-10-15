@@ -213,7 +213,11 @@ add_executable(khcom_unit_tests
     src/text_overlay/fade_sampler.cpp
     src/ram_overlay_dispatch.cpp
     src/scaffold_stub.cpp
+    src/game_config.cpp
 )
+# game_config.cpp (settings registry, khcom_config.ini) is linked for real; scaffold_stub.cpp then only
+# provides the empty dispatch table.
+target_compile_definitions(khcom_unit_tests PRIVATE KHCOM_TEST_REAL_CONFIG)
 target_include_directories(khcom_unit_tests PRIVATE
     src
     "${CMAKE_CURRENT_SOURCE_DIR}/generated"

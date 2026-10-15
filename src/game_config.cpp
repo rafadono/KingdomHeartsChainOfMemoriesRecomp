@@ -1,14 +1,7 @@
 #include "game_config.h"
 #include "gbaimp_integration.h"
-#include "gbaimp/audio_dsp.h"
-#include "gbaimp/perf_hud.h"
-#include "gbaimp/frame_interpolator.h"
-#include "gbaimp/screen_filters.h"
+#include "gbaimp/host_settings.h"
 #include "gbaimp/input_enhancements.h"
-#include "gbaimp/hd_audio_player.h"
-#include "gbaimp/pixel_art_upscaler.h"
-#include "gbaimp/dialog_turbo.h"
-#include "gbaimp/hud_anchoring.h"
 #include "text_overlay/overlay_types.h"
 #include "dialogue_backlog.h"
 #include "widescreen_adapter.h"
@@ -20,12 +13,12 @@
 #include <cmath>
 #include <vector>
 #include <cstring>
-#include <fstream>
-#include <sstream>
+#include <ostream>
 #include <string>
 
 #if defined(GBARECOMP_RUNTIME_UI)
 #include "recomp_runtime_ui.h"
+#include "gbaimp/runtime_ui_settings.h"
 #include "runtime_ui_standard.h"
 #endif
 
@@ -44,6 +37,11 @@ const std::uint16_t kAspectWidths[] = {
 };
 
 #if defined(GBARECOMP_RUNTIME_UI)
+using gbaimp::Setting;
+using gbaimp::SettingKind;
+using gbaimp::SettingsRegistry;
+
+// ---- Choice labels (the wording of this game's menu) ----------------------------------------------
 const char* const kFpsTargetChoices[] = {
     "60 FPS (Original GBA)",
     "120 FPS (2x High Rate)",
@@ -124,11 +122,6 @@ const char* const kHdTextModeChoices[] = {
     "HD overlay (output resolution)"
 };
 
-// Family names are filled in at start-up from OverlayRenderer::family_names() (built-ins, then fonts/*.ttf).
-constexpr std::size_t kMaxFontChoices = 8 + 8;   // built-in families + user fonts (FontLibrary::kMaxUserFonts)
-const char* g_font_choice_ptrs[kMaxFontChoices] = {};
-std::vector<std::string> g_font_choice_names;
-
 const char* const kHdWrapChoices[] = {
     "Keep engine line breaks",
     "Reflow to the text box"
@@ -185,504 +178,9 @@ const char* const kPerfThemeChoices[] = {
     "Minimal (Transparent)"
 };
 
-RecompRuntimeUiItem kExtraItems[] = {
-    {
-        "video.fps_target",
-        "Graphics",
-        "Target Framerate",
-        "Target refresh rate without altering speed",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 4, 1,
-        kFpsTargetChoices, 5, nullptr
-    },
-    {
-        "video.motion_smoothing",
-        "Graphics",
-        "Motion Smoothing",
-        "Temporal blending between simulation frames",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 2, 1,
-        kMotionSmoothingChoices, 3, nullptr
-    },
-    {
-        "video.xbrz_scale",
-        "Graphics",
-        "Pixel-Art Upscaler",
-        "Edge-aware pixel-art upscaler, Scale2x/EPX style (2x to 5x)",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 4, 1,
-        kXbrzChoices, 5, nullptr
-    },
-    {
-        "video.color_profile",
-        "Graphics",
-        "Color Profile / Gamma",
-        "Hardware color grading and gamma curve",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 5, 1,
-        kColorProfileChoices, 6, nullptr
-    },
-    {
-        "video.screen_mask",
-        "Graphics",
-        "Screen Mask Type",
-        "LCD grid, RGB subpixel stripes, scanlines",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 6, 1,
-        kScreenMaskChoices, 7, nullptr
-    },
-    {
-        "video.mask_intensity",
-        "Graphics",
-        "Mask Intensity (%)",
-        "Grid darkness: 10% (subtle) to 100% (dense)",
-        RECOMP_RUNTIME_UI_INT,
-        10, 100, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.gamepad_profile",
-        "Controller (Gamepad)",
-        "Controller Preset",
-        "Quick layout profile preset",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 5, 1,
-        kGamepadProfileChoices, 6, nullptr
-    },
-    {
-        "input.pad_attack",
-        "Controller (Gamepad)",
-        "Attack / Card Action",
-        "Play card, attack, menu confirm",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 7, 1,
-        kPadButtonChoices, 8, nullptr
-    },
-    {
-        "input.pad_jump",
-        "Controller (Gamepad)",
-        "Jump / Dodge Roll",
-        "Jump, dodge roll, menu cancel",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 7, 1,
-        kPadButtonChoices, 8, nullptr
-    },
-    {
-        "input.pad_deck_l",
-        "Controller (Gamepad)",
-        "Cycle Deck Left",
-        "Scroll deck cards to the left",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 7, 1,
-        kPadButtonChoices, 8, nullptr
-    },
-    {
-        "input.pad_deck_r",
-        "Controller (Gamepad)",
-        "Cycle Deck Right / Lock-on",
-        "Scroll deck right and lock-on",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 7, 1,
-        kPadButtonChoices, 8, nullptr
-    },
-    {
-        "input.analog_mode",
-        "Controller (Gamepad)",
-        "Stick Movement Mode",
-        "360 walk/run or 8-way digital",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 2, 1,
-        kAnalogChoices, 3, nullptr
-    },
-    {
-        "input.deadzone",
-        "Controller (Gamepad)",
-        "Stick Deadzone (%)",
-        "Stick drift margin (5% to 50%)",
-        RECOMP_RUNTIME_UI_INT,
-        5, 50, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.reset_pad",
-        "Controller (Gamepad)",
-        "Reset Gamepad to Defaults",
-        "Restore default gamepad mapping",
-        RECOMP_RUNTIME_UI_ACTION,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.kb_preset",
-        "Keyboard Controls",
-        "Keyboard Preset",
-        "Keyboard layout preset",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 4, 1,
-        kKeyboardPresetChoices, 5, nullptr
-    },
-    {
-        "input.key_a",
-        "Keyboard Controls",
-        "Attack / Card Action",
-        "Play card, attack, menu confirm",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_b",
-        "Keyboard Controls",
-        "Jump / Dodge Roll",
-        "Jump, dodge roll, menu cancel",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_l",
-        "Keyboard Controls",
-        "Cycle Deck Left",
-        "Scroll deck cards to the left",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_r",
-        "Keyboard Controls",
-        "Cycle Deck Right / Lock-on",
-        "Scroll deck right and lock-on",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_start",
-        "Keyboard Controls",
-        "Pause / Camp Menu",
-        "Open journal and pause game",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_select",
-        "Keyboard Controls",
-        "Switch Deck / Reload",
-        "Toggle enemy cards and reload",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_up",
-        "Keyboard Controls",
-        "Move Up",
-        "Move character upwards",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_down",
-        "Keyboard Controls",
-        "Move Down",
-        "Move character downwards",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_left",
-        "Keyboard Controls",
-        "Move Left",
-        "Move character to the left",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.key_right",
-        "Keyboard Controls",
-        "Move Right",
-        "Move character to the right",
-        RECOMP_RUNTIME_UI_TEXT,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "input.reset_kb",
-        "Keyboard Controls",
-        "Reset Keyboard to Defaults",
-        "Restore default keyboard mapping",
-        RECOMP_RUNTIME_UI_ACTION,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "gameplay.turbo_dialog",
-        "Gameplay & Assist",
-        "Turbo Dialog & Cutscene Skip",
-        "Hold Tab or Y to advance text at 60Hz",
-        RECOMP_RUNTIME_UI_BOOL,
-        0, 1, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.enabled",
-        "Dialogue Text (HD)",
-        "Dialogue Text",
-        "Original keeps the game text untouched. HD overlay draws the dialogue at output resolution",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 1, 1,
-        kHdTextModeChoices, 2, nullptr
-    },
-    {
-        "hdtext.family",
-        "Dialogue Text (HD)",
-        "Font Family",
-        "Built-in families, then .ttf files placed in the fonts/ folder (listed at start-up)",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 7, 1,
-        g_font_choice_ptrs, 8, nullptr
-    },
-    {
-        "hdtext.size",
-        "Dialogue Text (HD)",
-        "Font Size",
-        "In tenths of a GBA pixel (100 = 10 px, about the original cap height)",
-        RECOMP_RUNTIME_UI_INT,
-        30, 200, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.line_spacing",
-        "Dialogue Text (HD)",
-        "Line Spacing %",
-        "Line pitch as a percentage of the font size (120 = 12 px at size 10)",
-        RECOMP_RUNTIME_UI_INT,
-        80, 200, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.letter_spacing",
-        "Dialogue Text (HD)",
-        "Letter Spacing",
-        "Extra advance per letter in tenths of a GBA pixel",
-        RECOMP_RUNTIME_UI_INT,
-        -10, 30, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.wrap",
-        "Dialogue Text (HD)",
-        "Wrapping",
-        "Keep the engine lines (same words per line) or re-wrap the page to the text box",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 1, 1,
-        kHdWrapChoices, 2, nullptr
-    },
-    {
-        "hdtext.style",
-        "Dialogue Text (HD)",
-        "Text Style",
-        "Plain, drop shadow or outline",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 2, 1,
-        kHdStyleChoices, 3, nullptr
-    },
-    {
-        "hdtext.shadow_offset",
-        "Dialogue Text (HD)",
-        "Shadow Offset",
-        "Tenths of a GBA pixel (the game uses 10)",
-        RECOMP_RUNTIME_UI_INT,
-        2, 30, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.outline_width",
-        "Dialogue Text (HD)",
-        "Outline Width",
-        "Tenths of a GBA pixel",
-        RECOMP_RUNTIME_UI_INT,
-        2, 30, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.color",
-        "Dialogue Text (HD)",
-        "Text Colour",
-        "Preset text colours",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 7, 1,
-        kHdTextColorChoices, 8, nullptr
-    },
-    {
-        "hdtext.shadow_color",
-        "Dialogue Text (HD)",
-        "Shadow Colour",
-        "Preset shadow colours",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 6, 1,
-        kHdShadowColorChoices, 7, nullptr
-    },
-    {
-        "hdtext.outline_color",
-        "Dialogue Text (HD)",
-        "Outline Colour",
-        "Preset outline colours",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 3, 1,
-        kHdOutlineColorChoices, 4, nullptr
-    },
-    {
-        "hdtext.opacity",
-        "Dialogue Text (HD)",
-        "Text Opacity %",
-        "Opacity of the dialogue text",
-        RECOMP_RUNTIME_UI_INT,
-        20, 100, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.padding",
-        "Dialogue Text (HD)",
-        "Box Padding",
-        "Free space kept inside the text area, tenths of a GBA pixel",
-        RECOMP_RUNTIME_UI_INT,
-        0, 80, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.auto_fit",
-        "Dialogue Text (HD)",
-        "Auto-Fit",
-        "Shrink the text until the page fits the box; pages that cannot fit show the original text",
-        RECOMP_RUNTIME_UI_BOOL,
-        0, 1, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "hdtext.min_size",
-        "Dialogue Text (HD)",
-        "Minimum Size",
-        "Auto-fit lower bound in tenths of a GBA pixel",
-        RECOMP_RUNTIME_UI_INT,
-        30, 120, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "dialogue.backlog_enable",
-        "Dialogue & Story",
-        "Conversation Log (Backlog)",
-        "Translucent story history (press F2 or the gamepad Back button)",
-        RECOMP_RUNTIME_UI_BOOL,
-        0, 1, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "dialogue.open_backlog",
-        "Dialogue & Story",
-        "Open Conversation Log",
-        "View transcript and story history",
-        RECOMP_RUNTIME_UI_ACTION,
-        0, 0, 0,
-        nullptr, 0, nullptr
-    },
-    {
-        "audio.hd_enabled",
-        "Audio",
-        "HD Re:CoM Soundtrack",
-        "High-fidelity PS2 Re:CoM soundtrack",
-        RECOMP_RUNTIME_UI_BOOL,
-        0, 1, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "audio.bgm_volume",
-        "Audio",
-        "Music (BGM) Volume (%)",
-        "Independent music volume (0% to 150%)",
-        RECOMP_RUNTIME_UI_INT,
-        0, 150, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "audio.sfx_volume",
-        "Audio",
-        "Effects (SFX) Volume (%)",
-        "Independent sound effects volume (0-150%)",
-        RECOMP_RUNTIME_UI_INT,
-        0, 150, 5,
-        nullptr, 0, nullptr
-    },
-    {
-        "perf.mode",
-        "Diagnostics & HUD",
-        "Display Mode",
-        "FPS and frametime overlay (or press F10)",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 3, 1,
-        kPerfModeChoices, 4, nullptr
-    },
-    {
-        "perf.position",
-        "Diagnostics & HUD",
-        "Screen Position",
-        "Screen corner or drag anywhere with mouse",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 5, 1,
-        kPerfPositionChoices, 6, nullptr
-    },
-    {
-        "perf.theme",
-        "Diagnostics & HUD",
-        "Visual Theme",
-        "Color palette and background opacity",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 3, 1,
-        kPerfThemeChoices, 4, nullptr
-    },
-    {
-        "audio.eq_preset",
-        "Audio",
-        "Equalizer Profile",
-        "Real-time DSP sound equalizer profile",
-        RECOMP_RUNTIME_UI_CHOICE,
-        0, 3, 1,
-        kEqChoices, 4, nullptr
-    },
-    {
-        "audio.stereo_width",
-        "Audio",
-        "Stereo Width (%)",
-        "Stereo width: 0% mono to 200% expanded",
-        RECOMP_RUNTIME_UI_INT,
-        0, 200, 10,
-        nullptr, 0, nullptr
-    },
-    {
-        "audio.anti_aliasing",
-        "Audio",
-        "DAC Anti-Aliasing",
-        "Biquad filter to cut GBA audio hiss",
-        RECOMP_RUNTIME_UI_BOOL,
-        0, 1, 1,
-        nullptr, 0, nullptr
-    },
-    {
-        "audio.limiter",
-        "Audio",
-        "Dynamic Peak Limiter",
-        "Dynamic limiter preventing audio clipping",
-        RECOMP_RUNTIME_UI_BOOL,
-        0, 1, 1,
-        nullptr, 0, nullptr
-    }
-};
 
+// Family names are filled in at start-up from OverlayRenderer::family_names() (built-ins, then fonts/*.ttf).
+constexpr std::size_t kMaxFontChoices = 8 + 8;   // built-in families + user fonts (FontLibrary::kMaxUserFonts)
 
 // ---- HD dialogue text (text_overlay) settings <-> integer UI values ---------------------------------
 template <size_t N>
@@ -692,16 +190,6 @@ int colour_index(const std::uint32_t (&tbl)[N], std::uint32_t rgba) {
 }
 
 int tenths(float v) { return static_cast<int>(std::lround(v * 10.0f)); }
-
-// Legacy text keys of older config files / UI (dialogue.text_mode, font_*, line_capacity, soft_word_wrap):
-// they described the removed in-engine enhanced text and are accepted but ignored.
-bool is_legacy_text_key(const char* key) {
-    static const char* const kLegacy[] = {
-        "dialogue.text_mode", "dialogue.font_family", "dialogue.font_size", "dialogue.font_density",
-        "dialogue.font_scale", "dialogue.font_style", "dialogue.line_capacity", "dialogue.soft_word_wrap"};
-    for (const char* k : kLegacy) if (std::strcmp(key, k) == 0) return true;
-    return false;
-}
 
 // Returns 1 when `key` is a hdtext.* key (value written to *out), 0 otherwise.
 int hdtext_get(const char* key, int* out) {
@@ -758,8 +246,132 @@ int hdtext_set(const char* key, int v) {
     return 1;
 }
 
-// ini key <-> ui key of the integer HD text settings (section [HdText]); the font family is stored by name
-// (hdtext_font) so adding or removing fonts/*.ttf does not shift the selection.
+// ---- Menu rows: this game's labels, tooltips and ranges ---------------------------------------------------
+// Applied over the standard settings of the library and used to create the rows that only this game has
+// (hdtext.*, dialogue.*). `choices` is null for the dynamic font list.
+struct Row {
+    const char* id;
+    const char* label;
+    const char* tip;
+    SettingKind kind;
+    int min, max, step;
+    const char* const* choices;
+    std::size_t choice_count;
+};
+
+const Row kRows[] = {
+    {"video.fps_target", "Target Framerate", "Target refresh rate without altering speed",
+     SettingKind::Choice, 0, 4, 1, kFpsTargetChoices, 5},
+    {"video.motion_smoothing", "Motion Smoothing", "Temporal blending between simulation frames",
+     SettingKind::Choice, 0, 2, 1, kMotionSmoothingChoices, 3},
+    {"video.xbrz_scale", "Pixel-Art Upscaler", "Edge-aware pixel-art upscaler, Scale2x/EPX style (2x to 5x)",
+     SettingKind::Choice, 0, 4, 1, kXbrzChoices, 5},
+    {"video.color_profile", "Color Profile / Gamma", "Hardware color grading and gamma curve",
+     SettingKind::Choice, 0, 5, 1, kColorProfileChoices, 6},
+    {"video.screen_mask", "Screen Mask Type", "LCD grid, RGB subpixel stripes, scanlines",
+     SettingKind::Choice, 0, 6, 1, kScreenMaskChoices, 7},
+    {"video.mask_intensity", "Mask Intensity (%)", "Grid darkness: 10% (subtle) to 100% (dense)",
+     SettingKind::Int, 10, 100, 5, nullptr, 0},
+    {"input.gamepad_profile", "Controller Preset", "Quick layout profile preset",
+     SettingKind::Choice, 0, 5, 1, kGamepadProfileChoices, 6},
+    {"input.pad_attack", "Attack / Card Action", "Play card, attack, menu confirm",
+     SettingKind::Choice, 0, 7, 1, kPadButtonChoices, 8},
+    {"input.pad_jump", "Jump / Dodge Roll", "Jump, dodge roll, menu cancel",
+     SettingKind::Choice, 0, 7, 1, kPadButtonChoices, 8},
+    {"input.pad_deck_l", "Cycle Deck Left", "Scroll deck cards to the left",
+     SettingKind::Choice, 0, 7, 1, kPadButtonChoices, 8},
+    {"input.pad_deck_r", "Cycle Deck Right / Lock-on", "Scroll deck right and lock-on",
+     SettingKind::Choice, 0, 7, 1, kPadButtonChoices, 8},
+    {"input.analog_mode", "Stick Movement Mode", "360 walk/run or 8-way digital",
+     SettingKind::Choice, 0, 2, 1, kAnalogChoices, 3},
+    {"input.deadzone", "Stick Deadzone (%)", "Stick drift margin (5% to 50%)",
+     SettingKind::Int, 5, 50, 5, nullptr, 0},
+    {"input.reset_pad", "Reset Gamepad to Defaults", "Restore default gamepad mapping",
+     SettingKind::Action, 0, 0, 0, nullptr, 0},
+    {"input.kb_preset", "Keyboard Preset", "Keyboard layout preset",
+     SettingKind::Choice, 0, 4, 1, kKeyboardPresetChoices, 5},
+    {"input.key_a", "Attack / Card Action", "Play card, attack, menu confirm",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_b", "Jump / Dodge Roll", "Jump, dodge roll, menu cancel",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_l", "Cycle Deck Left", "Scroll deck cards to the left",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_r", "Cycle Deck Right / Lock-on", "Scroll deck right and lock-on",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_start", "Pause / Camp Menu", "Open journal and pause game",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_select", "Switch Deck / Reload", "Toggle enemy cards and reload",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_up", "Move Up", "Move character upwards",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_down", "Move Down", "Move character downwards",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_left", "Move Left", "Move character to the left",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.key_right", "Move Right", "Move character to the right",
+     SettingKind::Text, 0, 0, 0, nullptr, 0},
+    {"input.reset_kb", "Reset Keyboard to Defaults", "Restore default keyboard mapping",
+     SettingKind::Action, 0, 0, 0, nullptr, 0},
+    {"gameplay.turbo_dialog", "Turbo Dialog & Cutscene Skip", "Hold Tab or Y to advance text at 60Hz",
+     SettingKind::Bool, 0, 1, 1, nullptr, 0},
+    {"hdtext.enabled", "Dialogue Text", "Original keeps the game text untouched. HD overlay draws the dialogue at output resolution",
+     SettingKind::Choice, 0, 1, 1, kHdTextModeChoices, 2},
+    {"hdtext.family", "Font Family", "Built-in families, then .ttf files placed in the fonts/ folder (listed at start-up)",
+     SettingKind::Choice, 0, 7, 1, nullptr, 0},
+    {"hdtext.size", "Font Size", "In tenths of a GBA pixel (100 = 10 px, about the original cap height)",
+     SettingKind::Int, 30, 200, 5, nullptr, 0},
+    {"hdtext.line_spacing", "Line Spacing %", "Line pitch as a percentage of the font size (120 = 12 px at size 10)",
+     SettingKind::Int, 80, 200, 5, nullptr, 0},
+    {"hdtext.letter_spacing", "Letter Spacing", "Extra advance per letter in tenths of a GBA pixel",
+     SettingKind::Int, -10, 30, 1, nullptr, 0},
+    {"hdtext.wrap", "Wrapping", "Keep the engine lines (same words per line) or re-wrap the page to the text box",
+     SettingKind::Choice, 0, 1, 1, kHdWrapChoices, 2},
+    {"hdtext.style", "Text Style", "Plain, drop shadow or outline",
+     SettingKind::Choice, 0, 2, 1, kHdStyleChoices, 3},
+    {"hdtext.shadow_offset", "Shadow Offset", "Tenths of a GBA pixel (the game uses 10)",
+     SettingKind::Int, 2, 30, 1, nullptr, 0},
+    {"hdtext.outline_width", "Outline Width", "Tenths of a GBA pixel",
+     SettingKind::Int, 2, 30, 1, nullptr, 0},
+    {"hdtext.color", "Text Colour", "Preset text colours",
+     SettingKind::Choice, 0, 7, 1, kHdTextColorChoices, 8},
+    {"hdtext.shadow_color", "Shadow Colour", "Preset shadow colours",
+     SettingKind::Choice, 0, 6, 1, kHdShadowColorChoices, 7},
+    {"hdtext.outline_color", "Outline Colour", "Preset outline colours",
+     SettingKind::Choice, 0, 3, 1, kHdOutlineColorChoices, 4},
+    {"hdtext.opacity", "Text Opacity %", "Opacity of the dialogue text",
+     SettingKind::Int, 20, 100, 5, nullptr, 0},
+    {"hdtext.padding", "Box Padding", "Free space kept inside the text area, tenths of a GBA pixel",
+     SettingKind::Int, 0, 80, 5, nullptr, 0},
+    {"hdtext.auto_fit", "Auto-Fit", "Shrink the text until the page fits the box; pages that cannot fit show the original text",
+     SettingKind::Bool, 0, 1, 1, nullptr, 0},
+    {"hdtext.min_size", "Minimum Size", "Auto-fit lower bound in tenths of a GBA pixel",
+     SettingKind::Int, 30, 120, 5, nullptr, 0},
+    {"dialogue.backlog_enable", "Conversation Log (Backlog)", "Translucent story history (press F2 or the gamepad Back button)",
+     SettingKind::Bool, 0, 1, 1, nullptr, 0},
+    {"dialogue.open_backlog", "Open Conversation Log", "View transcript and story history",
+     SettingKind::Action, 0, 0, 0, nullptr, 0},
+    {"audio.hd_enabled", "HD Re:CoM Soundtrack", "High-fidelity PS2 Re:CoM soundtrack",
+     SettingKind::Bool, 0, 1, 1, nullptr, 0},
+    {"audio.bgm_volume", "Music (BGM) Volume (%)", "Independent music volume (0% to 150%)",
+     SettingKind::Int, 0, 150, 5, nullptr, 0},
+    {"audio.sfx_volume", "Effects (SFX) Volume (%)", "Independent sound effects volume (0-150%)",
+     SettingKind::Int, 0, 150, 5, nullptr, 0},
+    {"perf.mode", "Display Mode", "FPS and frametime overlay (or press F10)",
+     SettingKind::Choice, 0, 3, 1, kPerfModeChoices, 4},
+    {"perf.position", "Screen Position", "Screen corner or drag anywhere with mouse",
+     SettingKind::Choice, 0, 5, 1, kPerfPositionChoices, 6},
+    {"perf.theme", "Visual Theme", "Color palette and background opacity",
+     SettingKind::Choice, 0, 3, 1, kPerfThemeChoices, 4},
+    {"audio.eq_preset", "Equalizer Profile", "Real-time DSP sound equalizer profile",
+     SettingKind::Choice, 0, 3, 1, kEqChoices, 4},
+    {"audio.stereo_width", "Stereo Width (%)", "Stereo width: 0% mono to 200% expanded",
+     SettingKind::Int, 0, 200, 10, nullptr, 0},
+    {"audio.anti_aliasing", "DAC Anti-Aliasing", "Biquad filter to cut GBA audio hiss",
+     SettingKind::Bool, 0, 1, 1, nullptr, 0},
+    {"audio.limiter", "Dynamic Peak Limiter", "Dynamic limiter preventing audio clipping",
+     SettingKind::Bool, 0, 1, 1, nullptr, 0},
+};
+
 const struct { const char* ini; const char* ui; } kHdTextKeys[] = {
     {"hdtext_enabled", "hdtext.enabled"},             {"hdtext_size", "hdtext.size"},
     {"hdtext_line_spacing", "hdtext.line_spacing"},   {"hdtext_letter_spacing", "hdtext.letter_spacing"},
@@ -771,470 +383,175 @@ const struct { const char* ini; const char* ui; } kHdTextKeys[] = {
     {"hdtext_min_size", "hdtext.min_size"},
 };
 
-bool hdtext_ini_key(const std::string& key, int value);   // defined after ui_set_callback
+
+std::vector<std::string> g_font_choice_names;
+
+std::vector<std::string> to_vec(const char* const* a, std::size_t n) {
+    std::vector<std::string> v;
+    if (a) for (std::size_t i = 0; i < n; ++i) v.emplace_back(a[i]);
+    return v;
+}
 
 // Fills the dynamic family list of the "hdtext.family" menu item (built-in + fonts/ folder).
 void init_font_choices() {
     g_font_choice_names = overlay::OverlayRenderer::instance().family_names();
     if (g_font_choice_names.size() > kMaxFontChoices) g_font_choice_names.resize(kMaxFontChoices);
-    for (size_t i = 0; i < g_font_choice_names.size(); ++i) g_font_choice_ptrs[i] = g_font_choice_names[i].c_str();
-    for (RecompRuntimeUiItem& it : kExtraItems)
-        if (it.key && !std::strcmp(it.key, "hdtext.family")) {
-            it.choices = g_font_choice_ptrs;
-            it.choice_count = g_font_choice_names.size();
-            it.maximum = static_cast<int>(g_font_choice_names.size()) - 1;
-        }
 }
 
-int ui_get_callback(const char* key, int* value_out) {
-    if (!key || !value_out) return 0;
-    auto& dsp = gbaimp::AudioDsp::instance();
-    auto& hud = gbaimp::PerfHud::instance();
-    auto& interp = gbaimp::FrameInterpolator::instance();
-    auto& filters = gbaimp::ScreenFilters::instance();
-    auto& xbrz = gbaimp::PixelArtUpscaler::instance();
-    auto& input = gbaimp::InputEnhancements::instance();
-    auto& hd_audio = gbaimp::HdAudioPlayer::instance();
-    auto& turbo = gbaimp::DialogTurbo::instance();
-    auto& backlog = DialogueBacklog::instance();
+// Legacy keys of older config files / UI (dialogue.text_mode, font_*, line_capacity, soft_word_wrap): they described the
+// removed in-engine enhanced text and are accepted but ignored.
+const char* const kLegacyTextIds[] = {
+    "dialogue.text_mode", "dialogue.font_family", "dialogue.font_size", "dialogue.font_density",
+    "dialogue.font_scale", "dialogue.font_style", "dialogue.line_capacity", "dialogue.soft_word_wrap"};
+const char* const kLegacyTextIniKeys[] = {
+    "text_mode", "font_family", "font_size", "font_density", "font_scale", "font_style", "line_capacity",
+    "soft_word_wrap"};
 
-    if (hdtext_get(key, value_out)) return 1;
-    if (is_legacy_text_key(key)) return 0;
-    if (std::strcmp(key, "dialogue.backlog_enable") == 0) {
-        *value_out = backlog.is_enabled() ? 1 : 0;
-        return 1;
-    }
-
-    if (std::strcmp(key, "video.fps_target") == 0) {
-        *value_out = static_cast<int>(interp.settings().mode);
-        return 1;
-    }
-    if (std::strcmp(key, "video.motion_smoothing") == 0) {
-        *value_out = static_cast<int>(interp.settings().smoothing);
-        return 1;
-    }
-    if (std::strcmp(key, "video.xbrz_scale") == 0) {
-        int idx = (xbrz.scale() == gbaimp::UpscaleScale::None) ? 0 : (static_cast<int>(xbrz.scale()) - 1);
-        *value_out = idx;
-        return 1;
-    }
-    if (std::strcmp(key, "video.color_profile") == 0) {
-        *value_out = static_cast<int>(filters.settings().color_profile);
-        return 1;
-    }
-    if (std::strcmp(key, "video.screen_mask") == 0) {
-        *value_out = static_cast<int>(filters.settings().mask_type);
-        return 1;
-    }
-    if (std::strcmp(key, "video.mask_intensity") == 0) {
-        *value_out = static_cast<int>(filters.settings().mask_intensity * 100.0f + 0.5f);
-        return 1;
-    }
-    if (std::strcmp(key, "input.analog_mode") == 0) {
-        *value_out = static_cast<int>(input.settings().analog_mode);
-        return 1;
-    }
-    if (std::strcmp(key, "input.deadzone") == 0) {
-        *value_out = static_cast<int>(input.settings().deadzone * 100.0f + 0.5f);
-        return 1;
-    }
-    if (std::strcmp(key, "input.gamepad_profile") == 0) {
-        *value_out = static_cast<int>(input.settings().gamepad_profile);
-        return 1;
-    }
-    if (std::strcmp(key, "input.pad_attack") == 0) {
-        *value_out = static_cast<int>(input.settings().pad_a);
-        return 1;
-    }
-    if (std::strcmp(key, "input.pad_jump") == 0) {
-        *value_out = static_cast<int>(input.settings().pad_b);
-        return 1;
-    }
-    if (std::strcmp(key, "input.pad_deck_l") == 0) {
-        *value_out = static_cast<int>(input.settings().pad_l);
-        return 1;
-    }
-    if (std::strcmp(key, "input.pad_deck_r") == 0) {
-        *value_out = static_cast<int>(input.settings().pad_r);
-        return 1;
-    }
-    if (std::strcmp(key, "input.kb_preset") == 0) {
-        *value_out = static_cast<int>(input.settings().kb_preset);
-        return 1;
-    }
-    if (std::strcmp(key, "gameplay.turbo_dialog") == 0) {
-        *value_out = turbo.is_enabled() ? 1 : 0;
-        return 1;
-    }
-    if (std::strcmp(key, "audio.hd_enabled") == 0) {
-        *value_out = hd_audio.settings().enabled ? 1 : 0;
-        return 1;
-    }
-    if (std::strcmp(key, "audio.bgm_volume") == 0) {
-        *value_out = static_cast<int>(hd_audio.settings().bgm_volume * 100.0f + 0.5f);
-        return 1;
-    }
-    if (std::strcmp(key, "audio.sfx_volume") == 0) {
-        *value_out = static_cast<int>(hd_audio.settings().sfx_volume * 100.0f + 0.5f);
-        return 1;
-    }
-    if (std::strcmp(key, "perf.mode") == 0) {
-        *value_out = static_cast<int>(hud.settings().mode);
-        return 1;
-    }
-    if (std::strcmp(key, "perf.position") == 0) {
-        *value_out = static_cast<int>(hud.settings().position);
-        return 1;
-    }
-    if (std::strcmp(key, "perf.theme") == 0) {
-        *value_out = static_cast<int>(hud.settings().theme);
-        return 1;
-    }
-    if (std::strcmp(key, "audio.eq_preset") == 0) {
-        *value_out = static_cast<int>(dsp.settings().preset);
-        return 1;
-    }
-    if (std::strcmp(key, "audio.stereo_width") == 0) {
-        *value_out = static_cast<int>(dsp.settings().stereo_width * 100.0f + 0.5f);
-        return 1;
-    }
-    if (std::strcmp(key, "audio.anti_aliasing") == 0) {
-        *value_out = dsp.settings().anti_aliasing_filter ? 1 : 0;
-        return 1;
-    }
-    if (std::strcmp(key, "audio.limiter") == 0) {
-        *value_out = dsp.settings().limiter_enabled ? 1 : 0;
-        return 1;
-    }
-    return 0;
+const char* hdtext_ini_for(const char* ui_id) {
+    for (const auto& m : kHdTextKeys) if (std::strcmp(m.ui, ui_id) == 0) return m.ini;
+    return nullptr;
 }
 
-static int ui_action_callback(const char* key) {
-    if (!key) return 0;
-    if (std::strcmp(key, "dialogue.open_backlog") == 0) {
-        DialogueBacklog::instance().set_open(true);
-        return 1;
-    }
-    if (std::strcmp(key, "input.reset_controls") == 0) {
-        gbaimp::InputEnhancements::instance().reset_to_defaults();
-        save_khcom_config();
-        return 1;
-    }
-    if (std::strcmp(key, "input.reset_pad") == 0) {
-        gbaimp::InputEnhancements::instance().reset_gamepad_defaults();
-        save_khcom_config();
-        return 1;
-    }
-    if (std::strcmp(key, "input.reset_kb") == 0) {
-        gbaimp::InputEnhancements::instance().reset_keyboard_defaults();
-        save_khcom_config();
-        return 1;
-    }
-    return 0;
+// Menu order of this game's sections (the ini has its own order, see set_section_order below). Settings with
+// no menu row (the dragged HUD position) follow the section of their ini group.
+int menu_rank(const Setting& s) {
+    static const char* const kOrder[] = {"Graphics", "Controller (Gamepad)", "Keyboard Controls", "Gameplay & Assist",
+                                         "Dialogue Text (HD)", "Dialogue & Story", "Audio", "Diagnostics & HUD"};
+    constexpr int kCount = static_cast<int>(sizeof(kOrder) / sizeof(kOrder[0]));
+    if (s.menu_section.empty()) return s.ini_section == "Diagnostics" ? kCount - 1 : kCount;
+    for (int i = 0; i < kCount; ++i)
+        if (s.menu_section == kOrder[i]) return i;
+    return kCount;
 }
 
-static int ui_get_text_callback(const char* key, char* buf, std::size_t buf_len) {
-    if (!key || !buf || buf_len == 0) return 0;
-    auto& input = gbaimp::InputEnhancements::instance();
-    if (std::strncmp(key, "input.key_", 10) == 0) {
-        const char* name = key + 10;
-        gbaimp::GbaKeyIndex idx = input.key_index_from_name(name);
-        if (idx != gbaimp::KEY_COUNT) {
-            const char* kname = input.get_key_name(idx);
-            std::snprintf(buf, buf_len, "%s", kname);
-            return 1;
+Setting make_host_row(const Row& r) {
+    Setting s;
+    s.id = r.id;
+    const bool hd = std::strncmp(r.id, "hdtext.", 7) == 0;
+    s.menu_section = hd ? "Dialogue Text (HD)" : "Dialogue & Story";
+    s.label = r.label;
+    s.tooltip = r.tip;
+    s.kind = r.kind;
+    s.min = r.min; s.max = r.max; s.step = r.step;
+    s.choices = to_vec(r.choices, r.choice_count);
+    return s;
+}
+
+void build_registry(SettingsRegistry& reg) {
+    init_font_choices();
+
+    reg.set_ini_path("khcom_config.ini");
+    reg.set_section_order({"Video", "Audio", "Dialogue", "HdText", "Controls", "Gameplay", "Diagnostics"});
+    // Like the original loader: a missing file is not created just by starting the game.
+    reg.set_write_defaults_if_missing(false);
+    // Headless harness runs never persist their overrides.
+    reg.set_save_blocked([] { return capture::active(); });
+
+    gbaimp::StandardSettingsOptions opt;
+    opt.exclude = {"audio.master_volume", "audio.sample_rate"};   // this game has neither
+    gbaimp::register_standard_settings(reg, gbaimp::SettingsTargets::shared(), opt);
+    reg.rename_menu_section("Display and Graphics", "Graphics");
+
+    // This game's wording and ranges over the standard settings.
+    for (const Row& r : kRows) {
+        if (Setting* s = reg.find(r.id)) {
+            s->label = r.label;
+            s->tooltip = r.tip;
+            if (s->kind == SettingKind::Int || s->kind == SettingKind::Choice) { s->min = r.min; s->max = r.max; s->step = r.step; }
+            if (r.choices) s->choices = to_vec(r.choices, r.choice_count);
         }
     }
-    return 0;
-}
 
-static int ui_set_text_callback(const char* key, const char* value) {
-    if (!key || !value) return 0;
-    auto& input = gbaimp::InputEnhancements::instance();
-    if (std::strncmp(key, "input.key_", 10) == 0) {
-        const char* name = key + 10;
-        gbaimp::GbaKeyIndex idx = input.key_index_from_name(name);
-        if (idx != gbaimp::KEY_COUNT) {
-            bool ok = input.set_key_from_name(idx, value);
-            if (ok) {
-                input.save_keybinds();
-            }
-            return ok ? 1 : 0;
+    // Host-only rows: HD dialogue text (hdtext.*).
+    for (const Row& r : kRows) {
+        if (std::strncmp(r.id, "hdtext.", 7) != 0) continue;
+        Setting s = make_host_row(r);
+        const std::string id = r.id;
+        s.ini_section = "HdText";
+        if (id == "hdtext.family") {
+            // Dynamic list (built-ins, then fonts/*.ttf). Stored by name (hdtext_font, below); the index
+            // form (hdtext_family) is accepted for the capture harness (integer overrides only) and never written.
+            s.choices = g_font_choice_names;
+            s.min = 0;
+            s.max = std::max(0, static_cast<int>(g_font_choice_names.size()) - 1);
+            s.ini_key = "hdtext_family";
+            s.ini_save = false;
+        } else if (const char* ik = hdtext_ini_for(r.id)) {
+            s.ini_key = ik;
         }
+        s.get = [id] { int v = 0; hdtext_get(id.c_str(), &v); return v; };
+        s.set = [id](int v) { hdtext_set(id.c_str(), v); };
+        reg.add(std::move(s));
     }
-    return 0;
-}
-
-static int ui_enabled_callback(const char* key) {
-    if (!key) return 1;
-    if (std::strcmp(key, "system.resume") == 0) {
-        return 0;
-    }
-    return 1;
-}
-
-static bool s_is_loading_config = false;
-
-static void save_khcom_config_impl() {
-    if (capture::active()) return;   // harness runs never persist their overrides
-
-    std::ofstream file("khcom_config.ini");
-    if (!file.is_open()) return;
-
-    auto& dsp = gbaimp::AudioDsp::instance();
-    auto& hud = gbaimp::PerfHud::instance();
-    auto& interp = gbaimp::FrameInterpolator::instance();
-    auto& filters = gbaimp::ScreenFilters::instance();
-    auto& xbrz = gbaimp::PixelArtUpscaler::instance();
-    auto& input = gbaimp::InputEnhancements::instance();
-    auto& hd_audio = gbaimp::HdAudioPlayer::instance();
-    auto& turbo = gbaimp::DialogTurbo::instance();
-    auto& backlog = DialogueBacklog::instance();
-
-    file << "[Video]\n";
-    file << "fps_target=" << static_cast<int>(interp.settings().mode) << "\n";
-    file << "motion_smoothing=" << static_cast<int>(interp.settings().smoothing) << "\n";
-    int xbrz_idx = (xbrz.scale() == gbaimp::UpscaleScale::None) ? 0 : (static_cast<int>(xbrz.scale()) - 1);
-    file << "xbrz_scale=" << xbrz_idx << "\n";
-    file << "color_profile=" << static_cast<int>(filters.settings().color_profile) << "\n";
-    file << "screen_mask=" << static_cast<int>(filters.settings().mask_type) << "\n";
-    file << "mask_intensity=" << static_cast<int>(filters.settings().mask_intensity * 100.0f + 0.5f) << "\n\n";
-
-    file << "[Audio]\n";
-    file << "hd_enabled=" << (hd_audio.settings().enabled ? 1 : 0) << "\n";
-    file << "bgm_volume=" << static_cast<int>(hd_audio.settings().bgm_volume * 100.0f + 0.5f) << "\n";
-    file << "sfx_volume=" << static_cast<int>(hd_audio.settings().sfx_volume * 100.0f + 0.5f) << "\n";
-    file << "eq_preset=" << static_cast<int>(dsp.settings().preset) << "\n";
-    file << "stereo_width=" << static_cast<int>(dsp.settings().stereo_width * 100.0f + 0.5f) << "\n";
-    file << "anti_aliasing=" << (dsp.settings().anti_aliasing_filter ? 1 : 0) << "\n";
-    file << "limiter=" << (dsp.settings().limiter_enabled ? 1 : 0) << "\n\n";
-
-    file << "[Dialogue]\n";
-    file << "backlog_enable=" << (backlog.is_enabled() ? 1 : 0) << "\n\n";
-
-    file << "[HdText]\n";
-    {
+    // The font family is stored by name so adding or removing fonts/*.ttf does not shift the selection.
+    gbaimp::IniExtension font;
+    font.section = "HdText";
+    font.write = [](std::ostream& o) {
         const std::vector<std::string> fams = overlay::OverlayRenderer::instance().family_names();
         const int fi = overlay::settings().family;
-        if (fi >= 0 && fi < static_cast<int>(fams.size())) file << "hdtext_font=" << fams[fi] << "\n";
-        for (const auto& m : kHdTextKeys) {
-            int v = 0;
-            if (hdtext_get(m.ui, &v)) file << m.ini << "=" << v << "\n";
-        }
-        file << "\n";
-    }
-
-    file << "[Controls]\n";
-    file << "analog_mode=" << static_cast<int>(input.settings().analog_mode) << "\n";
-    file << "analog_deadzone=" << static_cast<int>(input.settings().deadzone * 100.0f + 0.5f) << "\n";
-    file << "gamepad_profile=" << static_cast<int>(input.settings().gamepad_profile) << "\n";
-    file << "pad_attack=" << static_cast<int>(input.settings().pad_a) << "\n";
-    file << "pad_jump=" << static_cast<int>(input.settings().pad_b) << "\n";
-    file << "pad_deck_l=" << static_cast<int>(input.settings().pad_l) << "\n";
-    file << "pad_deck_r=" << static_cast<int>(input.settings().pad_r) << "\n";
-    file << "kb_preset=" << static_cast<int>(input.settings().kb_preset) << "\n\n";
-
-    file << "[Gameplay]\n";
-    file << "turbo_dialog=" << (turbo.is_enabled() ? 1 : 0) << "\n\n";
-
-    file << "[Diagnostics]\n";
-    file << "perf_mode=" << static_cast<int>(hud.settings().mode) << "\n";
-    file << "perf_position=" << static_cast<int>(hud.settings().position) << "\n";
-    file << "perf_theme=" << static_cast<int>(hud.settings().theme) << "\n";
-    file << "hud_custom_x=" << static_cast<int>(hud.settings().custom_x) << "\n";
-    file << "hud_custom_y=" << static_cast<int>(hud.settings().custom_y) << "\n";
-}
-
-int ui_set_callback(const char* key, int value) {
-    if (!key) return 0;
-    auto& dsp = gbaimp::AudioDsp::instance();
-    auto& hud = gbaimp::PerfHud::instance();
-    auto& interp = gbaimp::FrameInterpolator::instance();
-    auto& filters = gbaimp::ScreenFilters::instance();
-    auto& xbrz = gbaimp::PixelArtUpscaler::instance();
-    auto& input = gbaimp::InputEnhancements::instance();
-    auto& hd_audio = gbaimp::HdAudioPlayer::instance();
-    auto& turbo = gbaimp::DialogTurbo::instance();
-    auto& backlog = DialogueBacklog::instance();
-
-    bool handled = false;
-    if (is_legacy_text_key(key)) {
-        return 1;   // accepted and ignored: the in-engine enhanced text is no longer reachable
-    } else if (hdtext_set(key, value)) {
-        handled = true;
-    } else if (std::strcmp(key, "dialogue.backlog_enable") == 0) {
-        backlog.set_enabled(value != 0);
-        handled = true;
-    } else if (std::strcmp(key, "video.fps_target") == 0) {
-        interp.set_mode(static_cast<gbaimp::FramerateMode>(value));
-        handled = true;
-    } else if (std::strcmp(key, "video.motion_smoothing") == 0) {
-        interp.set_smoothing(static_cast<gbaimp::MotionSmoothingMode>(value));
-        handled = true;
-    } else if (std::strcmp(key, "video.xbrz_scale") == 0) {
-        gbaimp::UpscaleScale scale = (value <= 0) ? gbaimp::UpscaleScale::None : static_cast<gbaimp::UpscaleScale>(value + 1);
-        xbrz.set_scale(scale);
-        handled = true;
-    } else if (std::strcmp(key, "video.color_profile") == 0) {
-        filters.set_color_profile(static_cast<gbaimp::ColorProfile>(value));
-        handled = true;
-    } else if (std::strcmp(key, "video.screen_mask") == 0) {
-        filters.set_mask_type(static_cast<gbaimp::ScreenMaskType>(value));
-        handled = true;
-    } else if (std::strcmp(key, "video.mask_intensity") == 0) {
-        filters.set_mask_intensity(static_cast<float>(value) / 100.0f);
-        handled = true;
-    } else if (std::strcmp(key, "input.analog_mode") == 0) {
-        input.set_analog_mode(static_cast<gbaimp::AnalogMode>(value));
-        handled = true;
-    } else if (std::strcmp(key, "input.deadzone") == 0) {
-        input.set_deadzone(static_cast<float>(value) / 100.0f);
-        handled = true;
-    } else if (std::strcmp(key, "input.gamepad_profile") == 0) {
-        input.apply_gamepad_profile(static_cast<gbaimp::GamepadProfile>(value));
-        handled = true;
-    } else if (std::strcmp(key, "input.pad_attack") == 0) {
-        input.set_pad_a(value);
-        handled = true;
-    } else if (std::strcmp(key, "input.pad_jump") == 0) {
-        input.set_pad_b(value);
-        handled = true;
-    } else if (std::strcmp(key, "input.pad_deck_l") == 0) {
-        input.set_pad_l(value);
-        handled = true;
-    } else if (std::strcmp(key, "input.pad_deck_r") == 0) {
-        input.set_pad_r(value);
-        handled = true;
-    } else if (std::strcmp(key, "input.kb_preset") == 0) {
-        input.apply_keyboard_preset(static_cast<gbaimp::KeyboardPreset>(value));
-        handled = true;
-    } else if (std::strcmp(key, "gameplay.turbo_dialog") == 0) {
-        turbo.set_enabled(value != 0);
-        handled = true;
-    } else if (std::strcmp(key, "audio.hd_enabled") == 0) {
-        hd_audio.set_enabled(value != 0);
-        handled = true;
-    } else if (std::strcmp(key, "audio.bgm_volume") == 0) {
-        hd_audio.set_bgm_volume(static_cast<float>(value) / 100.0f);
-        handled = true;
-    } else if (std::strcmp(key, "audio.sfx_volume") == 0) {
-        hd_audio.set_sfx_volume(static_cast<float>(value) / 100.0f);
-        handled = true;
-    } else if (std::strcmp(key, "perf.mode") == 0) {
-        hud.set_mode(static_cast<gbaimp::PerfHudMode>(value));
-        handled = true;
-    } else if (std::strcmp(key, "perf.position") == 0) {
-        hud.set_position(static_cast<gbaimp::PerfHudPosition>(value));
-        handled = true;
-    } else if (std::strcmp(key, "perf.theme") == 0) {
-        hud.set_theme(static_cast<gbaimp::PerfHudTheme>(value));
-        handled = true;
-    } else if (std::strcmp(key, "audio.eq_preset") == 0) {
-        dsp.apply_preset(static_cast<gbaimp::EqPreset>(value));
-        handled = true;
-    } else if (std::strcmp(key, "audio.stereo_width") == 0) {
-        dsp.set_stereo_width(static_cast<float>(value) / 100.0f);
-        handled = true;
-    } else if (std::strcmp(key, "audio.anti_aliasing") == 0) {
-        dsp.set_anti_aliasing(value != 0);
-        handled = true;
-    } else if (std::strcmp(key, "audio.limiter") == 0) {
-        dsp.set_limiter(value != 0);
-        handled = true;
-    }
-
-    if (handled) {
-        if (!s_is_loading_config) {
-            save_khcom_config();
-        }
-        return 1;
-    }
-    return 0;
-}
-
-bool hdtext_ini_key(const std::string& key, int value) {
-    // Index form of the family, accepted for the capture harness (KHCOM_SET / variants take integers only); the config
-    // file itself stores the family by name (hdtext_font) and never writes this key.
-    if (key == "hdtext_family") { ui_set_callback("hdtext.family", value); return true; }
-    for (const auto& m : kHdTextKeys)
-        if (key == m.ini) { ui_set_callback(m.ui, value); return true; }
-    return false;
-}
-
-static void load_khcom_config_impl() {
-    auto& input = gbaimp::InputEnhancements::instance();
-    input.load_keybinds();
-
-    std::ifstream file("khcom_config.ini");
-    // Headless harness overrides (KHCOM_SET), same keys as the ini; applied after the file.
-    std::string overrides;
-    for (const auto& kv : capture::settings_overrides()) overrides += kv.first + "=" + std::to_string(kv.second) + '\n';
-    if (!file.is_open() && overrides.empty()) return;
-
-    s_is_loading_config = true;
-    auto process = [&](std::istream& in) {
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty() || line[0] == '[' || line[0] == '#' || line[0] == ';') continue;
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-
-        std::string key = line.substr(0, eq);
-        while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.pop_back();
-        std::string val_str = line.substr(eq + 1);
-        if (key == "hdtext_font") {
-            while (!val_str.empty() && (val_str.back() == '\r' || val_str.back() == ' ')) val_str.pop_back();
-            const int idx = overlay::OverlayRenderer::instance().family_index(val_str);
-            if (idx >= 0) overlay::settings().family = idx;
-            continue;
-        }
-        int val = 0;
-        try {
-            val = std::stoi(val_str);
-        } catch (...) {
-            continue;
-        }
-
-        if (key == "fps_target") ui_set_callback("video.fps_target", val);
-        else if (key == "motion_smoothing") ui_set_callback("video.motion_smoothing", val);
-        else if (key == "xbrz_scale") ui_set_callback("video.xbrz_scale", val);
-        else if (key == "color_profile") ui_set_callback("video.color_profile", val);
-        else if (key == "screen_mask") ui_set_callback("video.screen_mask", val);
-        else if (key == "mask_intensity") ui_set_callback("video.mask_intensity", val);
-        else if (key == "hud_anchoring") { /* legacy key: HUD anchoring now follows the 16:9 view mode; ignored */ }
-        else if (key == "hd_enabled") ui_set_callback("audio.hd_enabled", val);
-        else if (key == "bgm_volume") ui_set_callback("audio.bgm_volume", val);
-        else if (key == "sfx_volume") ui_set_callback("audio.sfx_volume", val);
-        else if (key == "eq_preset") ui_set_callback("audio.eq_preset", val);
-        else if (key == "stereo_width") ui_set_callback("audio.stereo_width", val);
-        else if (key == "anti_aliasing") ui_set_callback("audio.anti_aliasing", val);
-        else if (key == "limiter") ui_set_callback("audio.limiter", val);
-        else if (key == "text_mode" || key == "font_family" || key == "font_size" || key == "font_density" ||
-                 key == "font_scale" || key == "font_style" || key == "line_capacity" || key == "soft_word_wrap") {
-            /* legacy in-engine enhanced text keys: parsed and ignored */
-        }
-        else if (key == "backlog_enable") ui_set_callback("dialogue.backlog_enable", val);
-        else if (key == "analog_mode") ui_set_callback("input.analog_mode", val);
-        else if (key == "analog_deadzone") ui_set_callback("input.deadzone", val);
-        else if (key == "gamepad_profile") ui_set_callback("input.gamepad_profile", val);
-        else if (key == "pad_attack") ui_set_callback("input.pad_attack", val);
-        else if (key == "pad_jump") ui_set_callback("input.pad_jump", val);
-        else if (key == "pad_deck_l") ui_set_callback("input.pad_deck_l", val);
-        else if (key == "pad_deck_r") ui_set_callback("input.pad_deck_r", val);
-        else if (key == "kb_preset") ui_set_callback("input.kb_preset", val);
-        else if (hdtext_ini_key(key, val)) { /* HD dialogue text */ }
-        else if (key == "turbo_dialog") ui_set_callback("gameplay.turbo_dialog", val);
-        else if (key == "perf_mode") ui_set_callback("perf.mode", val);
-        else if (key == "perf_position") ui_set_callback("perf.position", val);
-        else if (key == "perf_theme") ui_set_callback("perf.theme", val);
-        else if (key == "hud_custom_x") gbaimp::PerfHud::instance().settings().custom_x = static_cast<float>(val);
-        else if (key == "hud_custom_y") gbaimp::PerfHud::instance().settings().custom_y = static_cast<float>(val);
-    }
+        if (fi >= 0 && fi < static_cast<int>(fams.size())) o << "hdtext_font=" << fams[fi] << "\n";
     };
-    if (file.is_open()) process(file);
-    std::istringstream ov(overrides);
-    process(ov);
-    s_is_loading_config = false;
+    font.read = [](const std::string& key, const std::string& raw) {
+        if (key != "hdtext_font") return false;
+        std::string name = raw;
+        while (!name.empty() && (name.back() == '\r' || name.back() == ' ')) name.pop_back();
+        const int idx = overlay::OverlayRenderer::instance().family_index(name);
+        if (idx >= 0) overlay::settings().family = idx;
+        return true;
+    };
+    reg.add_ini_extension(std::move(font));
+
+    // Host-only rows: conversation log.
+    for (const Row& r : kRows) {
+        if (std::strncmp(r.id, "dialogue.", 9) != 0) continue;
+        Setting s = make_host_row(r);
+        if (std::strcmp(r.id, "dialogue.backlog_enable") == 0) {
+            s.ini_section = "Dialogue";
+            s.ini_key = "backlog_enable";
+            s.get = [] { return DialogueBacklog::instance().is_enabled() ? 1 : 0; };
+            s.set = [](int v) { DialogueBacklog::instance().set_enabled(v != 0); };
+        } else if (std::strcmp(r.id, "dialogue.open_backlog") == 0) {
+            s.action = [] { DialogueBacklog::instance().set_open(true); };
+            s.save_after_action = false;
+        }
+        reg.add(std::move(s));
+    }
+
+    for (const char* id : kLegacyTextIds) reg.add_ignored_id(id);
+    for (const char* key : kLegacyTextIniKeys) reg.add_ignored_ini_key(key);
+
+    // Menu order: this game's sections in its own order (the standard block comes in the library's order).
+    // The relative order inside a section, which is also the key order of the ini, is kept.
+    std::vector<Setting> all = reg.settings();
+    for (const Setting& s : all) reg.remove(s.id);
+    std::stable_sort(all.begin(), all.end(), [](const Setting& a, const Setting& b) { return menu_rank(a) < menu_rank(b); });
+    for (Setting& s : all) reg.add(std::move(s));
+}
+
+SettingsRegistry& settings_registry() {
+    static SettingsRegistry reg;
+    static const bool built = (build_registry(reg), true);
+    (void)built;
+    return reg;
+}
+
+gbaimp::RuntimeUiBinding& ui_binding() {
+    static gbaimp::RuntimeUiBinding binding(settings_registry());
+    return binding;
+}
+
+// Live setting changes requested by the capture harness (KHCOM_CAPTURE_VARIANTS): khcom_config.ini
+// keys mapped onto the registry, restricted to the display / HD text / performance HUD keys.
+int harness_set_setting(const char* ini_key, int value) {
+    static const char* const kKeys[] = {"screen_mask", "mask_intensity", "color_profile", "xbrz_scale",
+                                        "motion_smoothing", "perf_mode"};
+    bool allowed = std::strncmp(ini_key, "hdtext_", 7) == 0;
+    for (const char* k : kKeys) if (std::strcmp(ini_key, k) == 0) allowed = true;
+    if (!allowed) return 0;
+    SettingsRegistry& reg = settings_registry();
+    for (const Setting& s : reg.settings())
+        if (!s.ini_key.empty() && s.ini_key == ini_key) return reg.set(s.id, value) ? 1 : 0;
+    return 0;
 }
 #endif
 
@@ -1242,44 +559,24 @@ static void load_khcom_config_impl() {
 
 void save_khcom_config() {
 #if defined(GBARECOMP_RUNTIME_UI)
-    save_khcom_config_impl();
+    settings_registry().save_ini();
 #endif
 }
 
 void load_khcom_config() {
 #if defined(GBARECOMP_RUNTIME_UI)
-    load_khcom_config_impl();
+    // Headless harness overrides (KHCOM_SET), same keys as the ini; applied after the file.
+    std::string overrides;
+    for (const auto& kv : capture::settings_overrides()) overrides += kv.first + "=" + std::to_string(kv.second) + '\n';
+    settings_registry().load_ini(overrides);
 #endif
 }
 
 #if defined(GBARECOMP_RUNTIME_UI)
-static RecompRuntimeUi*& s_active_runtime_ui = g_active_runtime_ui;  // set by create_standard_ui()
-
-bool is_runtime_menu_open() {
-    return s_active_runtime_ui && recomp_runtime_ui_is_open(s_active_runtime_ui);
-}
-
-void open_runtime_menu() {
-    if (s_active_runtime_ui && !recomp_runtime_ui_is_open(s_active_runtime_ui)) {
-        recomp_runtime_ui_open(s_active_runtime_ui);
-    }
-}
-
-void close_runtime_menu() {
-    if (s_active_runtime_ui && recomp_runtime_ui_is_open(s_active_runtime_ui)) {
-        recomp_runtime_ui_close(s_active_runtime_ui);
-    }
-}
-
-void toggle_runtime_menu() {
-    if (s_active_runtime_ui) {
-        if (recomp_runtime_ui_is_open(s_active_runtime_ui)) {
-            recomp_runtime_ui_close(s_active_runtime_ui);
-        } else {
-            recomp_runtime_ui_open(s_active_runtime_ui);
-        }
-    }
-}
+bool is_runtime_menu_open() { return gbaimp::runtime_menu_is_open(g_active_runtime_ui); }
+void open_runtime_menu() { gbaimp::runtime_menu_open(g_active_runtime_ui); }
+void close_runtime_menu() { gbaimp::runtime_menu_close(g_active_runtime_ui); }
+void toggle_runtime_menu() { gbaimp::runtime_menu_toggle(g_active_runtime_ui); }
 #else
 bool is_runtime_menu_open() {
     return false;
@@ -1287,25 +584,6 @@ bool is_runtime_menu_open() {
 void open_runtime_menu() {}
 void close_runtime_menu() {}
 void toggle_runtime_menu() {}
-#endif
-
-#if defined(GBARECOMP_RUNTIME_UI)
-// Live setting changes requested by the capture harness (KHCOM_CAPTURE_VARIANTS): khcom_config.ini
-// keys mapped onto the same ui_set_callback keys the settings overlay uses.
-static int harness_set_setting(const char* ini_key, int value) {
-    static const struct { const char* ini; const char* ui; } kMap[] = {
-        {"screen_mask", "video.screen_mask"},     {"mask_intensity", "video.mask_intensity"},
-        {"color_profile", "video.color_profile"}, {"xbrz_scale", "video.xbrz_scale"},
-        {"motion_smoothing", "video.motion_smoothing"},
-        {"perf_mode", "perf.mode"},
-        {"hdtext_family", "hdtext.family"},   // family by index (harness only; the config file stores the name)
-    };
-    for (const auto& m : kMap)
-        if (std::strcmp(ini_key, m.ini) == 0) return ui_set_callback(m.ui, value);
-    for (const auto& m : kHdTextKeys)
-        if (std::strcmp(ini_key, m.ini) == 0) return ui_set_callback(m.ui, value);
-    return 0;
-}
 #endif
 
 gbarecomp::RunOptions create_run_options() {
@@ -1361,15 +639,11 @@ gbarecomp::RunOptions create_run_options() {
     khcom_install_widescreen_adapter(22, 22);
 
 #if defined(GBARECOMP_RUNTIME_UI)
-    init_font_choices();
-    opts.ui_extra_items = kExtraItems;
-    opts.ui_extra_item_count = sizeof(kExtraItems) / sizeof(kExtraItems[0]);
-    opts.ui_get = ui_get_callback;
-    opts.ui_set = ui_set_callback;
-    opts.ui_action = ui_action_callback;
-    opts.ui_enabled = ui_enabled_callback;
-    opts.ui_get_text = ui_get_text_callback;
-    opts.ui_set_text = ui_set_text_callback;
+    // The registry (menu rows, callbacks, khcom_config.ini) is built on first use; the binding turns it into
+    // the runtime menu items and the ui_* callbacks. Both live for the whole process.
+    gbaimp::RuntimeUiBinding& ui = ui_binding();
+    ui.rebuild();
+    ui.apply(opts);
 
     // Restore saved user configurations across game sessions
     load_khcom_config();

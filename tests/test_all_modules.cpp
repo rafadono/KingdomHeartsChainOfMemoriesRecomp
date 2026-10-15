@@ -6,8 +6,12 @@
 #include "gbaimp/widescreen.h"
 #include "music_hook.h"
 #include "gbaimp/hd_audio_player.h"
+#include "gbaimp/frame_interpolator.h"
+#include "gbaimp/perf_hud.h"
 #include "armv4t/runtime_arm.h"
 #include "capture_harness.h"
+#include "game_config.h"
+#include "recomp_runtime_ui.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -742,6 +746,132 @@ static void test_capture_harness() {
     std::cout << "[PASS] Capture harness: inert without env, PNG writer structure/CRC/Adler verified" << std::endl;
 }
 
+// khcom_config.ini through the settings registry (game_config.cpp + gbaimp/host_settings.h): a file written by an earlier
+// build loads into the module settings and is written back unchanged (same sections, key order and values); legacy and
+// unknown keys are read and dropped. Runs in a scratch directory so the real khcom_config.ini / keybinds.ini stay untouched.
+static void test_config_ini_roundtrip() {
+    namespace fs = std::filesystem;
+    const char* canonical =
+        "[Video]\n"
+        "fps_target=2\nmotion_smoothing=2\nxbrz_scale=2\ncolor_profile=2\nscreen_mask=1\nmask_intensity=40\n\n"
+        "[Audio]\n"
+        "hd_enabled=1\nbgm_volume=135\nsfx_volume=100\neq_preset=2\nstereo_width=130\nanti_aliasing=1\nlimiter=1\n\n"
+        "[Dialogue]\n"
+        "backlog_enable=1\n\n"
+        "[HdText]\n"
+        "hdtext_font=Rounded Sans\nhdtext_enabled=1\nhdtext_size=90\nhdtext_line_spacing=115\nhdtext_letter_spacing=5\n"
+        "hdtext_wrap=1\nhdtext_style=1\nhdtext_shadow_offset=6\nhdtext_outline_width=8\nhdtext_color=1\n"
+        "hdtext_shadow_color=0\nhdtext_outline_color=0\nhdtext_opacity=100\nhdtext_padding=0\nhdtext_auto_fit=1\n"
+        "hdtext_min_size=50\n\n"
+        "[Controls]\n"
+        "analog_mode=2\nanalog_deadzone=18\ngamepad_profile=5\npad_attack=0\npad_jump=1\npad_deck_l=4\npad_deck_r=5\n"
+        "kb_preset=4\n\n"
+        "[Gameplay]\n"
+        "turbo_dialog=1\n\n"
+        "[Diagnostics]\n"
+        "perf_mode=1\nperf_position=5\nperf_theme=0\nhud_custom_x=1394\nhud_custom_y=54\n";
+
+    const fs::path dir = fs::temp_directory_path() / "khcom_config_roundtrip";
+    fs::create_directories(dir);
+    const fs::path prev = fs::current_path();
+    fs::current_path(dir);
+    auto write = [](const std::string& text) { std::ofstream f("khcom_config.ini", std::ios::binary); f << text; };
+    auto same = [&](const std::string& got, const std::string& want, const char* what) {
+        if (got == want) return;
+        std::cout << "[FAIL] khcom_config.ini " << what << ": written file differs\n--- got ---\n" << got
+                  << "--- expected ---\n" << want << "-----" << std::endl;
+        std::abort();
+    };
+    auto read = [] {
+        std::ifstream f("khcom_config.ini", std::ios::binary);
+        std::string t((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        t.erase(std::remove(t.begin(), t.end(), '\r'), t.end());   // the file is written in text mode (CRLF on Windows)
+        return t;
+    };
+
+    // 1. A file in the layout of an earlier build comes back byte for byte (the volume above 100 % is kept: range 0..150).
+    write(canonical);
+    load_khcom_config();
+    save_khcom_config();
+    same(read(), canonical, "round trip");
+
+    // The runtime menu built from the registry: one row for every setting of the game's menu, in this game's section order,
+    // each one answering ui_get / ui_get_text / ui_action through the callbacks handed to the runtime.
+    {
+        gbarecomp::RunOptions opts = create_run_options();
+        assert(opts.ui_extra_item_count == 55);
+        assert(opts.ui_get && opts.ui_set && opts.ui_action && opts.ui_get_text && opts.ui_set_text && opts.ui_enabled);
+        const char* last_section = "";
+        std::vector<std::string> section_order;
+        for (size_t i = 0; i < opts.ui_extra_item_count; ++i) {
+            const auto& it = static_cast<const RecompRuntimeUiItem*>(opts.ui_extra_items)[i];
+            if (std::strcmp(it.section, last_section) != 0) { section_order.push_back(it.section); last_section = it.section; }
+            int v = 0;
+            char text[64];
+            switch (it.type) {
+                case RECOMP_RUNTIME_UI_ACTION: break;
+                case RECOMP_RUNTIME_UI_TEXT: assert(opts.ui_get_text(it.key, text, sizeof(text)) == 1); break;
+                default: assert(opts.ui_get(it.key, &v) == 1); break;
+            }
+        }
+        const std::vector<std::string> expected_sections = {"Graphics", "Controller (Gamepad)", "Keyboard Controls",
+            "Gameplay & Assist", "Dialogue Text (HD)", "Dialogue & Story", "Audio", "Diagnostics & HUD"};
+        assert(section_order == expected_sections);
+        assert(opts.ui_enabled("system.resume") == 0 && opts.ui_enabled("video.fps_target") == 1);
+        // legacy ids sent by an old menu are accepted by ui_set and unknown for ui_get
+        int v = 0;
+        assert(opts.ui_set("dialogue.text_mode", 1) == 1 && opts.ui_get("dialogue.text_mode", &v) == 0);
+        // the volumes go up to 150 %, the sample rate / master volume of the library are not offered
+        assert(opts.ui_set("audio.bgm_volume", 150) == 1 && opts.ui_get("audio.bgm_volume", &v) == 1 && v == 150);
+        assert(opts.ui_get("audio.master_volume", &v) == 0 && opts.ui_get("audio.sample_rate", &v) == 0);
+    }
+
+    // 2. CRLF endings, legacy text keys, the retired hud_anchoring key, junk lines and an unknown key never fail the load;
+    //    none of them is written back and the known values are unchanged.
+    std::string messy;
+    for (const char* p = canonical; *p; ++p) { if (*p == '\n') messy += '\r'; messy += *p; }
+    messy += "[Dialogue]\r\ntext_mode=2\r\nfont_family=3\r\nfont_size=1\r\nfont_density=1\r\nfont_scale=2\r\n"
+             "font_style=1\r\nline_capacity=2\r\nsoft_word_wrap=1\r\nhud_anchoring=1\r\nnot_a_key=7\r\nthis line has no equals\r\n"
+             "fps_target=abc\r\n; comment\r\n";
+    write(messy);
+    load_khcom_config();
+    save_khcom_config();
+    same(read(), canonical, "messy file");
+
+    // 3. Values apply through the settings: another file changes the live module state and is written back as given.
+    std::string changed = canonical;
+    auto replace = [&](const char* a, const char* b) {
+        const size_t i = changed.find(a);
+        assert(i != std::string::npos);
+        changed.replace(i, std::strlen(a), b);
+    };
+    replace("fps_target=2", "fps_target=1");
+    replace("bgm_volume=135", "bgm_volume=60");
+    replace("hdtext_size=90", "hdtext_size=120");
+    replace("perf_mode=1", "perf_mode=3");
+    write(changed);
+    load_khcom_config();
+    assert(static_cast<int>(gbaimp::FrameInterpolator::instance().settings().mode) == 1);
+    assert(gbaimp::HdAudioPlayer::instance().settings().bgm_volume.load() > 0.59f &&
+           gbaimp::HdAudioPlayer::instance().settings().bgm_volume.load() < 0.61f);
+    assert(static_cast<int>(gbaimp::PerfHud::instance().settings().mode) == 3);
+    save_khcom_config();
+    same(read(), changed, "changed values");
+
+    // 4. A value outside the range of a setting is clamped, not stored as is.
+    replace("bgm_volume=60", "bgm_volume=900");
+    write(changed);
+    load_khcom_config();
+    save_khcom_config();
+    replace("bgm_volume=900", "bgm_volume=150");
+    same(read(), changed, "clamped value");
+
+    fs::current_path(prev);
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    std::cout << "[PASS] khcom_config.ini: earlier layout loads and is written back unchanged, legacy keys ignored, values clamped" << std::endl;
+}
+
 int main() {
     std::cout << "================================================================" << std::endl;
     std::cout << "           KHCOMRecomp Native C++ Unit Test Runner             " << std::endl;
@@ -758,6 +888,7 @@ int main() {
     assert(run_overlay_engine_tests(false) == 0);
     ++modules_run;
     std::cout << "[PASS] HD dialogue text overlay: fonts, layout, fit, reveal, caches, drawing (tests/test_overlay_render.cpp)" << std::endl;
+    ++modules_run; test_config_ini_roundtrip();
 
     std::cout << "================================================================" << std::endl;
     std::cout << "ALL NATIVE C++ UNIT TESTS PASSED SUCCESSFULLY (" << modules_run << "/" << modules_run << " MODULES)." << std::endl;
