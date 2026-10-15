@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR"
@@ -9,7 +9,7 @@ RECOMPILE=false
 BUILD_RECOMPILER=false
 
 show_help() {
-    cat <<EOF
+    cat <<HELP
 KHCOMRecomp Linux Build Script
 
 Usage:
@@ -28,13 +28,13 @@ Distro Dependencies:
     sudo apt install build-essential cmake ninja-build libsdl2-dev
   Arch Linux:
     sudo pacman -S base-devel cmake ninja sdl2
-EOF
+HELP
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -c|--config)
-            CONFIG="$2"
+            CONFIG="${2:?--config needs a value}"
             shift 2
             ;;
         -r|--recompile)
@@ -102,6 +102,16 @@ if [ "$RECOMPILE" = true ]; then
         exit 1
     fi
 
+    # Generate the BIOS sources if a BIOS image is present.
+    mkdir -p "$ROOT/generated_bios"
+    for bios_candidate in "$ROOT"/bios/*.gba; do
+        if [ -f "$bios_candidate" ]; then
+            "$RECOMPILER_BIN" --bios "$bios_candidate" --out "$ROOT/generated_bios"
+            break
+        fi
+    done
+
+    mkdir -p "$ROOT/generated"
     echo "[KHCOMRecomp] Executing static recompilation on $ROM_PATH..."
     "$RECOMPILER_BIN" \
         --rom "$ROM_PATH" \

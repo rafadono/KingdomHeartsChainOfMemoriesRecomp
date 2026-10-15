@@ -33,10 +33,13 @@ jobs:
         with:
           arch: x64
 
+      # build.ps1 exits with the failing command's exit code, so a broken
+      # configure or compile fails the job.
       - name: Build Project
         shell: powershell
         run: |
           powershell -ExecutionPolicy Bypass -File .\build.ps1 -Target KHCOMRecomp -Config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build and Run Native Unit Tests
         shell: powershell
@@ -45,13 +48,16 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: |
           powershell -ExecutionPolicy Bypass -File .\build.ps1 -Target khcom_unit_tests -Config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .\build\Release\khcom_unit_tests.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Automated Test Suite
+        if: hashFiles('tests/test_runtime_functions.py') != ''
         shell: powershell
         run: |
           python tests/test_runtime_functions.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Stage Distribution Package
         shell: powershell
@@ -65,10 +71,12 @@ jobs:
           $sdlPath = if (Test-Path "build\Release\SDL2.dll") { "build\Release\SDL2.dll" } else { "SDL2.dll" }
           Copy-Item $sdlPath -Destination $dist
 
-          Copy-Item "keybinds.ini" -Destination $dist
-          Copy-Item "README.md" -Destination $dist
-          Copy-Item -Recurse "config" -Destination (Join-Path $dist "config")
-          Copy-Item -Recurse "docs" -Destination (Join-Path $dist "docs")
+          foreach ($f in @("keybinds.ini", "README.md")) {
+            if (Test-Path $f) { Copy-Item $f -Destination $dist }
+          }
+          foreach ($d in @("config", "docs")) {
+            if (Test-Path $d) { Copy-Item -Recurse $d -Destination (Join-Path $dist $d) }
+          }
 
           tar -a -c -f "$dist.zip" $dist
 
@@ -121,6 +129,7 @@ jobs:
           ./build/khcom_unit_tests
 
       - name: Run Automated Test Suite
+        if: hashFiles('tests/test_runtime_functions.py') != ''
         run: |
           python3 tests/test_runtime_functions.py
 
@@ -131,8 +140,9 @@ jobs:
 
           EXE_PATH=$(if [ -f "build/KHCOMRecomp" ]; then echo "build/KHCOMRecomp"; else echo "KHCOMRecomp"; fi)
           cp "$EXE_PATH" "$DIST/"
-          cp keybinds.ini README.md "$DIST/"
-          cp -r config docs "$DIST/"
+          for f in keybinds.ini README.md; do [ -f "$f" ] && cp "$f" "$DIST/"; done
+          for d in config docs; do [ -d "$d" ] && cp -r "$d" "$DIST/"; done
+          true
 
           tar -czvf "$DIST.tar.gz" "$DIST"
 

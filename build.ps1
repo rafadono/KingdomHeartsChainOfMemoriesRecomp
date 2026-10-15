@@ -12,6 +12,18 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# Native commands do not honour $ErrorActionPreference: check their exit code ourselves and
+# stop the script with that same code, so CI and callers see the failure.
+function Invoke-Checked([string]$What, [scriptblock]$Command) {
+    $global:LASTEXITCODE = 0
+    & $Command
+    $code = $global:LASTEXITCODE
+    if ($code -ne 0) {
+        Write-Host "[KHCOMRecomp] $What failed (exit code $code)." -ForegroundColor Red
+        exit $code
+    }
+}
+
 function Initialize-VcEnvironment {
     if (Get-Command cl.exe -ErrorAction SilentlyContinue) { return }
 
@@ -88,7 +100,7 @@ if (-not (Test-Path -LiteralPath $sdlHeader)) {
     $tempDir = Join-Path $root "third_party\temp"
     New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
     $zipPath = Join-Path $tempDir "sdl2.zip"
-    curl.exe -L "https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-devel-2.30.12-VC.zip" -o $zipPath
+    Invoke-Checked "SDL2 download" { curl.exe -L "https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-devel-2.30.12-VC.zip" -o $zipPath }
     Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
     Move-Item -Path (Join-Path $tempDir "SDL2-2.30.12") -Destination (Join-Path $root "third_party\sdl2") -Force
     Remove-Item -Recurse -Force $tempDir
@@ -97,7 +109,7 @@ if (-not (Test-Path -LiteralPath $sdlHeader)) {
 $recompUiDir = Join-Path $root "external\recomp-ui"
 if (-not (Test-Path -LiteralPath (Join-Path $recompUiDir "CMakeLists.txt"))) {
     Write-Host "[KHCOMRecomp] Initializing recomp-ui submodule..."
-    git submodule update --init --recursive external/recomp-ui
+    Invoke-Checked "recomp-ui submodule init" { git submodule update --init --recursive external/recomp-ui }
 }
 
 Write-Host "[KHCOMRecomp] CMake: $cmakePath"
@@ -106,9 +118,9 @@ $buildDir = Join-Path $root $BuildDir
 
 if ($BuildRecompiler) {
     Write-Host "[KHCOMRecomp] Building gba_recompile..."
-    & $cmakePath -S $root -B $buildDir -G "Ninja Multi-Config"
-    & $cmakePath --build $buildDir --config $Config --target gba_recompile --parallel
-    Write-Host "[KHCOMRecomp] gba_recompile built at $buildDir\$Config\gba_recompile.exe"
+    Invoke-Checked "CMake configure" { & $cmakePath -S $root -B $buildDir -G "Ninja Multi-Config" }
+    Invoke-Checked "gba_recompile build" { & $cmakePath --build $buildDir --config $Config --target gba_recompile --parallel }
+    Write-Host "[KHCOMRecomp] gba_recompile built at $buildDir\gbarecomp_build\$Config\gba_recompile.exe"
     exit 0
 }
 
@@ -116,7 +128,7 @@ if ($Recompile) {
     $recompilerBin = Join-Path $buildDir "gbarecomp_build\$Config\gba_recompile.exe"
     if (-not (Test-Path -LiteralPath $recompilerBin)) {
         Write-Host "[KHCOMRecomp] gba_recompile not found. Building it first..."
-        & $PSCommandPath -BuildRecompiler -Config $Config
+        Invoke-Checked "gba_recompile build" { & $PSCommandPath -BuildRecompiler -Config $Config -BuildDir $BuildDir }
     }
 
     $resolvedRom = $null
@@ -133,22 +145,37 @@ if ($Recompile) {
         throw "ROM file not found. Place the ROM (.gba) into the roms/ directory."
     }
 
+    # Generate the BIOS sources if a BIOS image is present and they do not exist yet.
+    $biosOutDir = Join-Path $root "generated_bios"
+    if (-not (Test-Path -LiteralPath (Join-Path $biosOutDir "bios_dispatch_table.cpp"))) {
+        $biosCandidates = Get-ChildItem -Path (Join-Path $root "bios") -Filter "*.gba" -File -ErrorAction SilentlyContinue
+        if ($biosCandidates) {
+            Write-Host "[KHCOMRecomp] Executing static recompilation on BIOS..."
+            New-Item -ItemType Directory -Force -Path $biosOutDir | Out-Null
+            $biosRom = $biosCandidates[0].FullName
+            Invoke-Checked "BIOS recompilation" { & $recompilerBin --bios $biosRom --out $biosOutDir }
+        }
+    }
+
+    $genDir = Join-Path $root "generated"
+    New-Item -ItemType Directory -Force -Path $genDir | Out-Null
+
     Write-Host "[KHCOMRecomp] Executing static recompilation on $resolvedRom..."
-    & $recompilerBin `
-        --rom $resolvedRom `
-        --config (Join-Path $root "config\b8ce.toml") `
-        --symbols (Join-Path $root "symbols\imported_symbols.tsv") `
-        --out (Join-Path $root "generated")
+    $configFile = Join-Path $root "config\b8ce.toml"
+    $symbolsFile = Join-Path $root "symbols\imported_symbols.tsv"
+    Invoke-Checked "ROM recompilation" {
+        & $recompilerBin --rom $resolvedRom --config $configFile --symbols $symbolsFile --out $genDir
+    }
 
     Write-Host "[KHCOMRecomp] C++ code generated in generated/ directory."
     exit 0
 }
 
 Write-Host "[KHCOMRecomp] Configuring CMake in $buildDir..."
-& $cmakePath -S $root -B $buildDir -G "Ninja Multi-Config"
+Invoke-Checked "CMake configure" { & $cmakePath -S $root -B $buildDir -G "Ninja Multi-Config" }
 
 Write-Host "[KHCOMRecomp] Compiling target '$Target' ($Config)..."
-& $cmakePath --build $buildDir --config $Config --target $Target --parallel
+Invoke-Checked "Build of target '$Target'" { & $cmakePath --build $buildDir --config $Config --target $Target --parallel }
 
 $builtExe = Join-Path $buildDir "$Config\KHCOMRecomp.exe"
 if (Test-Path -LiteralPath $builtExe) {
@@ -163,3 +190,4 @@ if (Test-Path -LiteralPath $builtToolchain) {
 }
 
 Write-Host "[KHCOMRecomp] Build completed successfully."
+exit 0

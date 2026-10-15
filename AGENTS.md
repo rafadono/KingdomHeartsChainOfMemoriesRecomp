@@ -34,7 +34,7 @@ En Git Bash de Windows conviene exportar `MSYS_NO_PATHCONV=1` antes de usar `doc
    ```powershell
    .\build.ps1 -BuildDir build-vs
    ```
-   Genera `KHCOMRecomp.exe` y `SDL2.dll` en la raíz del repositorio (ambos ignorados por git). Para compilar también el ejecutable de tests: `.\build.ps1 -BuildDir build-vs -Target khcom_unit_tests`.
+   Genera `KHCOMRecomp.exe` y `SDL2.dll` en la raíz del repositorio (ambos ignorados por git). El script termina con el código de salida del comando que falle (configuración, compilación o recompilación), así que un error de compilación se detecta por el código de salida. Para compilar también el ejecutable de tests: `.\build.ps1 -BuildDir build-vs -Target khcom_unit_tests`.
 2. **Tests:** desde la raíz del repositorio, `.\build-vs\Release\khcom_unit_tests.exe` (con `SDL2.dll` accesible, que la compilación ya copia junto al ejecutable).
 3. **Arranque de prueba sin pantalla (opcional):** con `SDL_VIDEODRIVER=dummy` y `SDL_AUDIODRIVER=dummy`, pasando las rutas entre comillas: `.\KHCOMRecomp.exe --rom "roms\<archivo>.gba" --bios "bios\gba (W).gba"`. Con `KHCOM_LOG_INTERPOSE=1` imprime el estado de las intercepciones de SDL.
 
@@ -52,6 +52,7 @@ Nunca responder al usuario dando por terminada una tarea de código sin haber co
 - Vive en `external/gba-improvements` como submódulo git y contiene las mejoras reutilizables (filtros, OSD, controles, audio, interceptación de SDL). No debe contener referencias a este juego.
 - Los cambios de la biblioteca se hacen en su repositorio: se prueban, se hace commit y push allí, y después se actualiza el puntero del submódulo en este repositorio. Un commit de este repositorio con el puntero viejo, o sin el puntero actualizado, rompe la compilación de un checkout limpio.
 - Todo lo específico del juego (zonas de HUD, hooks, widescreen, diálogo, música) vive en `src/`; la biblioteca se configura desde `src/gbaimp_integration.cpp`.
+- La compilación (ejecutable, ejecutable de tests, opciones de enlace, copias posteriores) la define `gbaimp_add_host()` de `external/gba-improvements/cmake/GbaimpHost.cmake`; `build.ps1`, `build.sh`, `docker/Dockerfile` y `.github/workflows/ci.yml` salen de las plantillas de `external/gba-improvements/templates/host/` (con la copia de `overlay_toolchain` y el paso de Node.js propios de este repositorio).
 - Ver `docs/GBA_IMPROVEMENTS_INTEGRATION.md`.
 
 ## 3. Documentación
