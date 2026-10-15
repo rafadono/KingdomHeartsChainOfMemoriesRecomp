@@ -4,6 +4,12 @@
 #include "dialogue_backlog.h"
 #include "game_config.h"
 #include "gbaimp/widescreen.h"
+#include "gbaimp/m4a_music_hook.h"
+#include "armv4t/runtime_arm.h"
+#include "runtime_bus_bridge.h"
+#include "gba/gba_bus.h"
+
+#include <cstdio>
 
 namespace khcom {
 
@@ -43,6 +49,38 @@ void register_gbaimp_integration() {
     deck.oam_clamp_enabled = true;
     deck.oam_clamp_x = 300;
     anchoring.add_zone(deck);
+}
+
+void hd_music_setup() {
+    static bool s_done = false;
+    if (s_done) return;
+    gba::GbaBus* bus = gbarecomp::active_bus();
+    if (!bus || !bus->rom_ptr() || bus->rom_size() == 0) return;   // not mapped yet: try again at the next call
+    s_done = true;
+
+    gbaimp::M4aMusicHook& hook = gbaimp::M4aMusicHook::instance();
+    hook.set_log_tag("khcom");
+    hook.set_logging_from_env("KHCOM_");   // KHCOM_LOG_INTERPOSE=1 prints the first song starts
+    if (!hook.locate(bus->rom_ptr(), bus->rom_size())) {
+        gbaimp::M4aAddresses a;
+        a.song_num_start = kM4aSongNumStart;
+        a.song_num_start_or_change = kM4aSongNumStartOrChange;
+        a.song_num_start_or_continue = kM4aSongNumStartOrContinue;
+        a.song_num_stop = kM4aSongNumStop;
+        a.mplay_all_stop = kM4aMPlayAllStop;
+        a.song_table = kM4aSongTable;
+        a.song_table_entries = kM4aSongTableEntries;
+        hook.set_addresses(a);
+    }
+    hook.set_bus_reader(&bus_read_u32);   // song table lookups through the guest bus
+}
+
+void hd_music_print_stats(const char* tag) {
+    const gbaimp::M4aHookStats m = gbaimp::M4aMusicHook::instance().stats();
+    std::fprintf(stderr, "[%s] m4a song hook: starts=%llu hd_mapped=%llu hd_stops=%llu\n", tag,
+                 static_cast<unsigned long long>(m.starts),
+                 static_cast<unsigned long long>(m.mapped_triggers),
+                 static_cast<unsigned long long>(m.hd_stops));
 }
 
 } // namespace khcom

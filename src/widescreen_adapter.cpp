@@ -3,7 +3,8 @@
 #include "gbaimp/widescreen.h"
 #include "gbaimp/widescreen_gbarecomp.h"
 #include "dialogue_backlog.h"
-#include "music_hook.h"
+#include "gbaimp/m4a_music_hook.h"
+#include "gbaimp_integration.h"
 #include "text_overlay/engine_hooks.h"
 #include "armv4t/runtime_arm.h"
 #include <atomic>
@@ -154,7 +155,7 @@ void track_battle_mode(uint32_t pc) {
 // Runs for every guest function entry (after the chain's previous hook).
 void on_fn_entry(uint32_t pc, void*) {
     // HD music trigger (m4a song-start / stop entry points); no-op for every other pc.
-    khcom::music_on_fn_entry(pc);
+    gbaimp::M4aMusicHook::instance().on_function_entry(pc, g_cpu.R[0]);
     track_battle_mode(pc);
     // Dialogue-overlay engine capture; chained only while the overlay is on.
     if (s_overlay_hooked.load(std::memory_order_relaxed)) khcom::overlay::engine::on_fn_entry(pc);
@@ -184,6 +185,7 @@ void configure_once() {
 // overlay capture switch. The overlay's engine state is reset when it is switched off.
 void install_runtime_hooks() {
     khcom::khcom_install_backlog_hook();
+    khcom::hd_music_setup();   // locates the m4a entry points once the cartridge is mapped
     const bool overlay = khcom::overlay::engine::wants_hook();
     if (s_overlay_hooked.load(std::memory_order_relaxed) != overlay) {
         s_overlay_hooked.store(overlay, std::memory_order_relaxed);

@@ -87,7 +87,6 @@ set(KHCOM_RUNTIME_SOURCES
     src/text_overlay/overlay_renderer.cpp
     src/ram_overlay_dispatch.cpp
     src/widescreen_adapter.cpp
-    src/music_hook.cpp
     src/text_overlay/engine_hooks.cpp
     src/text_overlay/battle_text.cpp
     src/text_overlay/fade_sampler.cpp
@@ -205,7 +204,6 @@ add_executable(khcom_unit_tests
     src/text_overlay/overlay_raster.cpp
     src/text_overlay/overlay_renderer.cpp
     src/widescreen_adapter.cpp
-    src/music_hook.cpp
     src/text_overlay/engine_hooks.cpp
     src/text_overlay/battle_text.cpp
     src/text_overlay/fade_sampler.cpp

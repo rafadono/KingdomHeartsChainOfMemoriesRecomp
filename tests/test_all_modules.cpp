@@ -4,7 +4,7 @@
 #include "dialogue_backlog.h"
 #include "widescreen_adapter.h"
 #include "gbaimp/widescreen.h"
-#include "music_hook.h"
+#include "gbaimp/m4a_music_hook.h"
 #include "gbaimp/hd_audio_player.h"
 #include "gbaimp/frame_interpolator.h"
 #include "gbaimp/perf_hud.h"
@@ -73,7 +73,7 @@ static void legacy_process_oam_entry(uint16_t& attr1, uint16_t attr0, int offset
     }
 }
 
-// HD music trigger: decisions of the m4a song hook (src/music_hook.cpp) against the library.
+// HD music trigger: this game's m4a table and wiring against the library hook (gbaimp::M4aMusicHook).
 static void test_music_hook() {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "khcom_music_hook_test";
@@ -98,50 +98,73 @@ static void test_music_hook() {
     hd.settings().target_sample_rate = 65536;
     hd.set_enabled(true);
     hd.load_track_mapping(ini.generic_string());
-    music_hook_reset_for_tests();
+    // The game's table (used when the locator does not recognise the ROM) in an independent hook; the sink is the shared player.
+    gbaimp::M4aMusicHook hook;
+    gbaimp::M4aAddresses addr;
+    addr.song_num_start = kM4aSongNumStart;
+    addr.song_num_start_or_change = kM4aSongNumStartOrChange;
+    addr.song_num_start_or_continue = kM4aSongNumStartOrContinue;
+    addr.song_num_stop = kM4aSongNumStop;
+    addr.mplay_all_stop = kM4aMPlayAllStop;
+    addr.song_table = kM4aSongTable;
+    addr.song_table_entries = kM4aSongTableEntries;
+    assert(addr.complete());
+    hook.set_addresses(addr);
 
-    music_on_song_start(7, 0);
+    hook.on_song_start(7, 0);
     assert(hd.current_song_id() == 7);                 // mapped song starts the HD track
-    music_on_song_start(100, 5);                       // unmapped, other player (e.g. a sound effect)
+    hook.on_song_start(100, 5);                        // unmapped, other player (e.g. a sound effect)
     assert(hd.current_song_id() == 7);
-    music_on_song_start(101, 0);                       // unmapped, same player: the music was replaced
+    hook.on_song_start(101, 0);                        // unmapped, same player: the music was replaced
     assert(hd.current_song_id() == 0);
-    music_on_song_start(8, 1);                         // mapped but the file is missing: silent, no crash
+    hook.on_song_start(8, 1);                          // mapped but the file is missing: silent, no crash
     assert(hd.current_song_id() == 0);
-    music_on_song_start(7, 2);
+    hook.on_song_start(7, 2);
     assert(hd.current_song_id() == 7);
-    music_on_song_stop(9);                             // some other song stopped: HD stays
+    hook.on_song_stop(9);                              // some other song stopped: HD stays
     assert(hd.current_song_id() == 7);
-    music_on_song_stop(7);
+    hook.on_song_stop(7);
     assert(hd.current_song_id() == 0);
-    music_on_song_start(7, 2);
-    music_on_all_stop();
+    hook.on_song_start(7, 2);
+    hook.on_all_stop();
     assert(hd.current_song_id() == 0);
 
-    // Through the function-entry dispatch (R0 is a u16 argument; other pcs are ignored).
-    music_set_song_player_reader([](uint32_t) -> uint32_t { return 3; });
-    g_cpu.R[0] = 0x00010007u;
-    music_on_fn_entry(0x08000240u);
+    // Through the function-entry dispatch with this game's addresses (R0 is a u16 argument; other pcs are ignored).
+    hook.set_song_player_reader([](uint32_t) -> uint32_t { return 3; });
+    hook.on_function_entry(0x08000240u, 0x00010007u);
     assert(hd.current_song_id() == 0);
-    music_on_fn_entry(kM4aSongNumStartOrChange);
+    hook.on_function_entry(kM4aSongNumStartOrChange, 0x00010007u);
     assert(hd.current_song_id() == 7);
-    music_on_fn_entry(kM4aSongNumStop);
+    hook.on_function_entry(kM4aSongNumStop, 0x00010007u);
     assert(hd.current_song_id() == 0);
-    g_cpu.R[0] = 0;
-    music_set_song_player_reader(nullptr);
+    hook.set_song_player_reader(nullptr);
 
     // Disabled HD audio never triggers.
     hd.set_enabled(false);
-    music_on_song_start(7, 0);
+    hook.on_song_start(7, 0);
     assert(hd.current_song_id() == 0);
     hd.set_enabled(true);
 
-    const MusicHookStats st = music_hook_stats();
+    const gbaimp::M4aHookStats st = hook.stats();
     assert(st.starts >= 5 && st.mapped_triggers >= 4 && st.hd_stops >= 3);
     hd.stop_music();
     hd.set_enabled(false);
     std::error_code ec;
     fs::remove_all(dir, ec);
+
+    // The locator finds this ROM's m4a entry points by code shape and agrees with the game's table (checked when the
+    // cartridge image is next to the sources; the repository does not ship it).
+    const fs::path rom_path = fs::path("roms") / "Kingdom Hearts - Chain of Memories (U)(Venom).gba";
+    if (fs::exists(rom_path)) {
+        std::ifstream rf(rom_path, std::ios::binary);
+        std::vector<uint8_t> rom((std::istreambuf_iterator<char>(rf)), std::istreambuf_iterator<char>());
+        const gbaimp::M4aAddresses found = gbaimp::locate_m4a(rom.data(), rom.size());
+        assert(found.complete());
+        assert(found.song_num_start == kM4aSongNumStart && found.song_num_start_or_change == kM4aSongNumStartOrChange);
+        assert(found.song_num_start_or_continue == kM4aSongNumStartOrContinue && found.song_num_stop == kM4aSongNumStop);
+        assert(found.mplay_all_stop == kM4aMPlayAllStop && found.song_table == kM4aSongTable);
+        assert(found.song_table_entries == kM4aSongTableEntries);
+    }
     std::cout << "[PASS] C++ music hook (m4a song trigger) unit test passed" << std::endl;
 }
 
