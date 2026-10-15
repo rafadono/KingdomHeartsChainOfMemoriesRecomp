@@ -40,7 +40,7 @@ layer (`gbaimp/sdl_interpose.h`, see "SDL intercepts" below).
 - `runtime_ui_standard.*`: view-mode labels of the in-game settings menu and the menu pointer; the interposition itself is `gbaimp/runtime_ui_glue.h` (see below)
 - HD music trigger glue (in `gbaimp_integration.*`, below), capture harness ([CAPTURE_HARNESS.md](CAPTURE_HARNESS.md)), `text_overlay/` (HD dialogue text, [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md) / [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md))
 - `dialogue_backlog.*`, `widescreen_adapter.*` (the game's profile of `gbaimp::Widescreen`), `runtime_ui_imgui_enhanced.cpp`, `ram_overlay_dispatch.*` (generated routines and one macro line), `main.cpp` (a `HostMainConfig`)
-- Game-specific Python tools: `tools/update_symbols.py`, `tools/import_decomp_symbols.py`, `tools/dialogue_text_tool.py`, `tools/gen_font_data.py`, `tools/overlay_png_to_ppm.py`, `tools/capture/*`
+- Game-specific Python tools: `tools/dialogue_text_tool.py`, `tools/capture/*` (the symbol, font-data and PNG helpers are in the library, see "Tool invocations")
 
 Gamepad API names are generic in the library (`pad_a/pad_b/pad_l/pad_r`,
 `GamepadProfile::Triggers`). The KH UI labels, the menu keys (`input.pad_attack`, `input.pad_jump`, `input.pad_deck_l`, `input.pad_deck_r`) and the
@@ -283,4 +283,21 @@ python external/gba-improvements/tools/gen_ram_dispatch.py --root . \
 
 python external/gba-improvements/tools/gen_symbols.py "$ROM" -o symbols/task_mode_symbols.txt \
     --code-size 0x122000
+
+# symbols/imported_symbols.tsv from the seed symbols and task_mode_symbols.txt
+python external/gba-improvements/tools/update_symbols.py --root . \
+    --seed 0x08000000:arm:start_vector --seed 0x080000C0:arm:crt0_entry \
+    --seed 0x080D7014:thumb:sound_driver_init --seed 0x080D7160:thumb:sound_driver_step \
+    --seed 0x080D71D4:thumb:sound_driver_sub --seed 0x0811F578:thumb:intr_manager_step
+
+# names from a matching decompilation build (symbols/khcom_syms.txt, khcom_sections.txt, khcom.map)
+python external/gba-improvements/tools/import_decomp_symbols.py --root . --id B8CE \
+    --name "Kingdom Hearts: Chain of Memories (USA)" --syms symbols/khcom_syms.txt \
+    --sections symbols/khcom_sections.txt --map symbols/khcom.map --rom "$ROM"
+
+# PNG capture frame to the PPM background of tools/overlay_dump.cpp
+python external/gba-improvements/tools/png_to_ppm.py capture/frame.png frame.ppm
+
+# embedded font data (see third_party/fonts/README.md for the exact command lines)
+python external/gba-improvements/tools/gen_font_data.py --namespace khcom::textfonts --include text_fonts.h ... > src/text_fonts_data.cpp
 ```
