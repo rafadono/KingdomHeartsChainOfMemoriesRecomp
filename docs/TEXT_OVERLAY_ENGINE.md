@@ -31,9 +31,8 @@ verified in a real run/capture, M = consistent but not directly observed.
    stops advancing in step with the vblank counter (not restored) or the vblank counter regresses, all captured state is
    dropped.
 3. **Authentic mode / inertness.** With `overlay::settings().enabled == false` (and no debug env) the hook chain is the
-   original one: `widescreen_adapter.cpp` keeps TWO chain links, `khcom_fn_entry_hook` (original) and
-   `khcom_fn_entry_hook_overlay` (original + `engine::on_fn_entry`), and `install_runtime_hooks()` (run every frame/poll) swaps
-   between them; nothing of this module runs per function entry or per frame when off (present path: one branch). Whether the
+   original one: the function-entry handler of the widescreen profile (`widescreen_adapter.cpp`) calls `engine::on_fn_entry` only while
+   `install_runtime_hooks()` (run every frame/poll) has switched the capture on (it resets the engine when it is switched off); nothing of this module runs per function entry or per frame when off (present path: one branch). Whether the
    overlay is on or off, the game lays out and draws its authentic text: there is no in-engine text enhancement any more (the
    old FontResizer / DialogueEnhancer ROM-read overrides were removed). Verified: authentic captures (native + output
    852x480, frames 8985/9000/9110) are byte-identical between the pre-change build and this build (H).

@@ -21,6 +21,11 @@ enhancement modules and recompilation helper scripts.
 | Input enhancements (gamepad profiles, analog, keyboard) | `gbaimp/input_enhancements.h` |
 | HUD anchoring (configurable `HudZone`s) | `gbaimp/hud_anchoring.h` |
 | Host integration points | `gbaimp/hooks.h` |
+| Host start-up sequence, RAM dispatcher, MSVC compat, scaffold stub | `gbaimp/host_main.h`, `gbaimp/ram_dispatch*.h`, `gbaimp/msvc_compat.h`, `gbaimp/scaffold_stub.h` |
+| Widescreen core (view policy, providers, viewport, hook chain) | `gbaimp/widescreen.h`, `gbaimp/widescreen_gbarecomp.h` |
+| Settings registry, standard panel, `.ini` persistence, runtime menu binding | `gbaimp/host_settings.h`, `gbaimp/runtime_ui_settings.h` |
+| Headless capture harness | `gbaimp/capture_harness.h` |
+| m4a HD music trigger | `gbaimp/m4a_music_hook.h` |
 | SDL interposition (Linux `--wrap` shims, Windows IAT patching) | `gbaimp/sdl_interpose.h` |
 | Python tools + `verify_rom_hash` (the latter is not built by this repository) | `tools/` |
 
@@ -29,12 +34,12 @@ layer (`gbaimp/sdl_interpose.h`, see "SDL intercepts" below).
 
 ### In KHCOMRecomp (`src/`)
 
-- `game_config.*`: runtime configuration/UI, `khcom_config.ini`
+- `game_config.*`: this game's settings registry (wording, `hdtext.*`, `dialogue.*`), runtime menu binding, `khcom_config.ini`, capture-harness configuration
 - `gbaimp_integration.*`: registration of hooks and HUD zones (see below)
 - `sdl_intercepts.cpp`: the game's callbacks for the library's generic SDL handlers (`gbaimp/game_host.h`) and their registration (see below)
 - `runtime_ui_standard.*`: view-mode labels of the in-game settings menu and the menu pointer; the interposition itself is `gbaimp/runtime_ui_glue.h` (see below)
-- `music_hook.*` (HD music trigger, below), `capture_harness.*` ([CAPTURE_HARNESS.md](CAPTURE_HARNESS.md)), `text_overlay/` (HD dialogue text, [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md) / [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md))
-- `dialogue_backlog.*`, `widescreen_adapter.*`, `runtime_ui_imgui_enhanced.cpp`, `ram_overlay_dispatch.*`, `main.cpp`
+- HD music trigger glue (in `gbaimp_integration.*`, below), capture harness ([CAPTURE_HARNESS.md](CAPTURE_HARNESS.md)), `text_overlay/` (HD dialogue text, [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md) / [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md))
+- `dialogue_backlog.*`, `widescreen_adapter.*` (the game's profile of `gbaimp::Widescreen`), `runtime_ui_imgui_enhanced.cpp`, `ram_overlay_dispatch.*` (generated routines and one macro line), `main.cpp` (a `HostMainConfig`)
 - Game-specific Python tools: `tools/update_symbols.py`, `tools/import_decomp_symbols.py`, `tools/dialogue_text_tool.py`, `tools/gen_font_data.py`, `tools/overlay_png_to_ppm.py`, `tools/capture/*`
 
 Gamepad API names are generic in the library (`pad_a/pad_b/pad_l/pad_r`,
@@ -75,13 +80,13 @@ cleared and re-added, so exactly two exist afterwards).
 
 - Hooks: `save_settings` -> `save_khcom_config`; `is_input_blocked` ->
   `is_runtime_menu_open() || DialogueBacklog::instance().is_open()`; `frame_counter` ->
-  `khcom_get_frame_counter`.
+  `gbaimp::Widescreen::instance().frame_counter()` (presented frames).
 - HUD zones (reproduce the previous hard-coded behavior):
   - Health bar, top-left: `direction=-1`, coordinates `x<=90, y<=45`; OAM `x 0..85, y 0..40`, clamp `x >= -40`.
   - Card deck, bottom-right: `direction=+1`, coordinates `x>=130, y>=95`; OAM `x 135..240, y 100..160`, clamp `x <= 300`.
   - HUD anchoring is **not a user option**. The only user choice is the view mode ("3:2 (Native)" /
-    "16:9 (Battles only)", chosen in gbarecomp's overlay). `src/widescreen_adapter.cpp` derives everything from the
-    live host state (`g_ws_active`, `g_ws_extra_left/right`) and the battle flag in `apply_view_policy()`:
+    "16:9 (Battles only)", chosen in gbarecomp's overlay). `gbaimp::Widescreen` (profile in `src/widescreen_adapter.cpp`) derives everything from the
+    live host state (`g_ws_active`, `g_ws_extra_left/right`) and the battle flag in `apply_policy()`:
     while a battle arena is shown in the 16:9 view, the player HUD is shifted by `extra_left` and the enemy HUD by
     `extra_right` (the HUD keeps its original margin to the real screen edge) and `gbaimp::HudAnchoring` is set to
     `WidescreenAnchored` with `horizontal_offset = max(extra_left, extra_right)`; in every other situation (3:2 view,
@@ -98,7 +103,7 @@ old algorithm over a full coordinate grid.
 
 gbarecomp rewrites `g_ws_active`, `g_ws_extra*` and `g_ws_view_width` whenever the user switches the view mode
 (`apply_runtime_view_geometry()`), then calls `extended_view_frame` = `khcom_update_widescreen_state()`.
-The widescreen adapter keeps no copy of the mode: `apply_view_policy()` recomputes the PPU policy globals from
+The widescreen module keeps no copy of the mode: `gbaimp::Widescreen::apply_policy()` recomputes the PPU policy globals from
 (view expanded?, in battle?) on every battle-flag change, every frame and every SDL poll. In the 3:2 view all
 `g_ws_*` policy globals (providers, `g_ws_authored_margin_layers`, `g_ws_pillarbox*`, `g_ws_obj_native_clip`) are
 reset to the values `run_game()` gives a faithful run, the providers decline when called directly, and the
@@ -106,9 +111,9 @@ reset to the values `run_game()` gives a faithful run, the providers decline whe
 (`test_view_mode_return_to_original`) drives boot, battle entry/exit, 3:2 <-> 16:9 switches during a battle and
 asymmetric extras, asserting after every return to 3:2 that the state equals the boot snapshot.
 
-Helpers for other modules (`src/widescreen_adapter.h`): `khcom_widescreen_view_active()` (16:9 view selected),
-`khcom_widescreen_presentation_active()` (16:9 view and in a battle: the widened picture is really shown) and
-`khcom_effective_extra_pixels(&left, &right)` (0/0 unless the presentation is active). Text/dialogue code must
+Helpers for other modules (`gbaimp::Widescreen::instance()`): `view_active()` (16:9 view selected),
+`presentation_active()` (16:9 view and in a battle: the widened picture is really shown) and
+`effective_extra_pixels(&left, &right)` (0/0 unless the presentation is active); the game's own `khcom_is_battle_active()` polls the mode words. Text/dialogue code must
 use these instead of `DialogueBoxScaler::extra_horizontal_tiles` when deciding how wide a box may be.
 
 ## SDL intercepts
@@ -123,7 +128,7 @@ There is ONE design for both platforms, implemented by the library's `gbaimp/sdl
   (never through the public `SDL_X` symbol, which would re-enter the handler).
 - `gbaimp::set_sdl_handlers(h)` registers the handlers; a null entry means "do not interpose".
 
-The six handlers (game image detection, colour correction, letterbox, mask, interpolation, performance HUD, audio) are generic and live in the library (`gbaimp/game_host.h`, `gbaimp::install_game_host()`). `src/sdl_intercepts.cpp` only fills a `gbaimp::GameHostConfig` with this game's callbacks (widescreen state, RAM dispatch, dialogue backlog, capture harness, text overlay, music hook statistics). They are
+The six handlers (game image detection, colour correction, letterbox, mask, interpolation, performance HUD, audio) are generic and live in the library (`gbaimp/game_host.h`, `gbaimp::install_game_host()`). `src/sdl_intercepts.cpp` only fills a `gbaimp::GameHostConfig` with this game's callbacks (widescreen state, RAM dispatch, dialogue backlog, capture harness, text overlay, music hook statistics; the viewport and the presented-frame counter are the widescreen module's). They are
 identical on both platforms. Only the way SDL calls reach them differs:
 
 | | Linux / GNU ld | Windows / MSVC |
@@ -156,11 +161,14 @@ Real-time safety: the trampoline does not allocate, lock or touch files. Setting
 track decoded by `trigger_song` on the game thread is handed over with an atomic pointer exchange. The library
 test `test_audio_threads` runs this under ThreadSanitizer (`-DGBAIMP_SANITIZE=thread`).
 
-## HD music trigger (`src/music_hook.cpp`)
+## HD music trigger (`gbaimp::M4aMusicHook`)
 
 `HdAudioPlayer::trigger_song` is driven from the game's own MusicPlayer2000 ("m4a") calls, through the
-function-entry hook that `widescreen_adapter.cpp` already owns (one owner, chained, re-installed every frame
-because gbarecomp resets `g_runtime_fn_entry_hook` at each run start).
+function-entry hook that `gbaimp::Widescreen` chains (one owner, re-installed every frame
+because gbarecomp resets `g_runtime_fn_entry_hook` at each run start); `widescreen_adapter.cpp` forwards `pc` and `R0` to
+`M4aMusicHook::on_function_entry()`. `hd_music_setup()` (`gbaimp_integration.cpp`) locates the five entry points in the
+cartridge image by their code shape once it is mapped, with the addresses below as the fallback, and gives the hook the guest bus
+reader for the song table (the unit test checks that the locator finds exactly these addresses in the USA ROM).
 
 | Address | Function (m4a library) | Argument |
 |---|---|---|
