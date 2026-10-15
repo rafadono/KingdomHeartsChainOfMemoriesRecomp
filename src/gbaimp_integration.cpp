@@ -1,7 +1,7 @@
 #include "gbaimp_integration.h"
 #include "gbaimp/hooks.h"
 #include "gbaimp/hud_anchoring.h"
-#include "dialogue_backlog.h"
+#include "gbaimp/text_history.h"
 #include "game_config.h"
 #include "gbaimp/widescreen.h"
 #include "gbaimp/m4a_music_hook.h"
@@ -17,12 +17,17 @@ void register_gbaimp_integration() {
     auto& h = gbaimp::hooks();
     h.save_settings = [] { save_khcom_config(); };
     h.is_input_blocked = [] {
-        return is_runtime_menu_open() || DialogueBacklog::instance().is_open();
+        return is_runtime_menu_open() || gbaimp::TextHistory::instance().is_open();
     };
     h.frame_counter = [] { return gbaimp::Widescreen::instance().frame_counter(); };
 
     auto& anchoring = gbaimp::HudAnchoring::instance();
     anchoring.clear_zones();
+
+    // Conversation log: the library defaults (panel, colors, captions, F2 / Back, 200 entries) are
+    // this game's look; only the two named speakers get their own color.
+    gbaimp::TextHistoryStyle& style = gbaimp::TextHistory::instance().config().style;
+    style.speaker_colors = {{"Sora", {56, 189, 248, 255}}, {"Marluxia", {244, 114, 182, 255}}};
 
     // Health bar region (top-left): pushed to the left edge of the widescreen view.
     gbaimp::HudZone health;

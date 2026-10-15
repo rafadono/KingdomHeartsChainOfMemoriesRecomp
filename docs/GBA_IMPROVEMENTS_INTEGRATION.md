@@ -39,7 +39,7 @@ layer (`gbaimp/sdl_interpose.h`, see "SDL intercepts" below).
 - `sdl_intercepts.cpp`: the game's callbacks for the library's generic SDL handlers (`gbaimp/game_host.h`) and their registration (see below)
 - `runtime_ui_standard.*`: view-mode labels of the in-game settings menu and the menu pointer; the interposition itself is `gbaimp/runtime_ui_glue.h` (see below)
 - HD music trigger glue (in `gbaimp_integration.*`, below), capture harness ([CAPTURE_HARNESS.md](CAPTURE_HARNESS.md)), `text_overlay/` (HD dialogue text, [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md) / [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md))
-- `dialogue_backlog.*`, `widescreen_adapter.*` (the game's profile of `gbaimp::Widescreen`), `runtime_ui_imgui_enhanced.cpp`, `ram_overlay_dispatch.*` (generated routines and one macro line), `main.cpp` (a `HostMainConfig`)
+- `dialogue_backlog.*` (only the dialogue observer; the widget is `gbaimp::TextHistory`, below), `widescreen_adapter.*` (the game's profile of `gbaimp::Widescreen`), `runtime_ui_imgui_enhanced.cpp`, `ram_overlay_dispatch.*` (generated routines and one macro line), `main.cpp` (a `HostMainConfig`)
 - Game-specific Python tools: `tools/dialogue_text_tool.py`, `tools/capture/*` (the symbol, font-data and PNG helpers are in the library, see "Tool invocations")
 
 Gamepad API names are generic in the library (`pad_a/pad_b/pad_l/pad_r`,
@@ -79,7 +79,7 @@ start of `khcom::create_run_options()` (`src/game_config.cpp`). It is idempotent
 cleared and re-added, so exactly two exist afterwards).
 
 - Hooks: `save_settings` -> `save_khcom_config`; `is_input_blocked` ->
-  `is_runtime_menu_open() || DialogueBacklog::instance().is_open()`; `frame_counter` ->
+  `is_runtime_menu_open() || gbaimp::TextHistory::instance().is_open()`; `frame_counter` ->
   `gbaimp::Widescreen::instance().frame_counter()` (presented frames).
 - HUD zones (reproduce the previous hard-coded behavior):
   - Health bar, top-left: `direction=-1`, coordinates `x<=90, y<=45`; OAM `x 0..85, y 0..40`, clamp `x >= -40`.
@@ -118,7 +118,7 @@ use these instead of `DialogueBoxScaler::extra_horizontal_tiles` when deciding h
 
 ## SDL intercepts
 
-All enhancements (screen filters, perf HUD, frame interpolation, audio DSP, dialogue backlog,
+All enhancements (screen filters, perf HUD, frame interpolation, audio DSP, conversation log,
 widescreen viewport/letterbox) work by intercepting six SDL calls that gbarecomp / recomp-ui make:
 `SDL_PollEvent`, `SDL_UpdateTexture`, `SDL_RenderCopy`, `SDL_RenderPresent`, `SDL_QueueAudio`, `SDL_OpenAudioDevice`.
 There is ONE design for both platforms, implemented by the library's `gbaimp/sdl_interpose.h`:
@@ -128,7 +128,7 @@ There is ONE design for both platforms, implemented by the library's `gbaimp/sdl
   (never through the public `SDL_X` symbol, which would re-enter the handler).
 - `gbaimp::set_sdl_handlers(h)` registers the handlers; a null entry means "do not interpose".
 
-The six handlers (game image detection, colour correction, letterbox, mask, interpolation, performance HUD, audio) are generic and live in the library (`gbaimp/game_host.h`, `gbaimp::install_game_host()`). `src/sdl_intercepts.cpp` only fills a `gbaimp::GameHostConfig` with this game's callbacks (widescreen state, RAM dispatch, dialogue backlog, capture harness, text overlay, music hook statistics; the viewport and the presented-frame counter are the widescreen module's). They are
+The six handlers (game image detection, colour correction, letterbox, mask, interpolation, performance HUD, audio) are generic and live in the library (`gbaimp/game_host.h`, `gbaimp::install_game_host()`). `src/sdl_intercepts.cpp` only fills a `gbaimp::GameHostConfig` with this game's callbacks (widescreen state, RAM dispatch, conversation log, capture harness, text overlay, music hook statistics; the viewport and the presented-frame counter are the widescreen module's). They are
 identical on both platforms. Only the way SDL calls reach them differs:
 
 | | Linux / GNU ld | Windows / MSVC |
@@ -160,6 +160,19 @@ Real-time safety: the trampoline does not allocate, lock or touch files. Setting
 (game thread) are atomics read by the audio thread; the DSP coefficients are owned by the audio thread; an HD
 track decoded by `trigger_song` on the game thread is handed over with an atomic pointer exchange. The library
 test `test_audio_threads` runs this under ThreadSanitizer (`-DGBAIMP_SANITIZE=thread`).
+
+## Conversation log (`gbaimp::TextHistory`)
+
+The log panel (entry store, F2 / gamepad Back hotkeys, scrolling, drawing, bitmap font, input blocking) is `gbaimp::TextHistory`
+(`gbaimp/text_history.h`). The game keeps only the observer in `src/dialogue_backlog.cpp`: it watches the guest bus reads in the
+cutscene dialogue range, confirms a line once its second character is read, decodes it, and calls
+`TextHistory::instance().push_entry(speaker, text)`. `sdl_intercepts.cpp` forwards `handle_event` and `render_sidebar`;
+`register_gbaimp_integration()` sets the only look override (the colors of Sora and Marluxia); `game_config.cpp` adds the two
+settings rows with `register_text_history_settings` (same ids, `.ini` key and menu section as before).
+
+Behavior differences from the previous in-game widget: opening the panel always lands on the newest entry; the hotkeys are F2 and the
+gamepad Back button (the old header comment also named L, but the code never handled it); the scroll bar, page keys, wheel, Esc / B
+and outside-click closing are unchanged.
 
 ## HD music trigger (`gbaimp::M4aMusicHook`)
 

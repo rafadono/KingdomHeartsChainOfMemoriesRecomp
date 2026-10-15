@@ -2,6 +2,7 @@
 #include "gbaimp/hud_anchoring.h"
 #include "gbaimp_integration.h"
 #include "dialogue_backlog.h"
+#include "gbaimp/text_history.h"
 #include "widescreen_adapter.h"
 #include "gbaimp/widescreen.h"
 #include "gbaimp/m4a_music_hook.h"
@@ -164,6 +165,7 @@ static void test_music_hook() {
         assert(found.song_num_start_or_continue == kM4aSongNumStartOrContinue && found.song_num_stop == kM4aSongNumStop);
         assert(found.mplay_all_stop == kM4aMPlayAllStop && found.song_table == kM4aSongTable);
         assert(found.song_table_entries == kM4aSongTableEntries);
+
     }
     std::cout << "[PASS] C++ music hook (m4a song trigger) unit test passed" << std::endl;
 }
@@ -328,20 +330,19 @@ static void test_hud_anchoring() {
 }
 
 static void test_dialogue_components() {
+    // The widget (hotkeys, drawing, entry store, settings rows) is gbaimp::TextHistory and is tested in the library;
+    // this covers the game's observer and how the host wires it.
+    register_gbaimp_integration();
+    auto& history = gbaimp::TextHistory::instance();
+    const auto& colors = history.config().style.speaker_colors;
+    assert(colors.size() == 2 && colors[0].first == "Sora" && colors[1].first == "Marluxia");
+    assert(colors[0].second.r == 56 && colors[1].second.g == 114);
+    assert(history.config().max_entries == 200 && history.config().dedup_window == 3);
+
     auto& backlog = DialogueBacklog::instance();
-
-    // Backlog tests
-    backlog.set_open(false);
-    assert(!backlog.is_open());
-
-    backlog.set_open(true);
-    assert(backlog.is_open());
-
-    backlog.toggle_open();
-    assert(!backlog.is_open());
-
+    history.set_open(false);
     backlog.clear();
-    assert(backlog.entries().empty());
+    assert(history.entries().empty());
 
     // Mock bus reader for Donald and cutscene dialogues
     auto prev_override = g_runtime_bus_read_override;
@@ -360,56 +361,47 @@ static void test_dialogue_components() {
 
     // Out of range read: must be ignored
     backlog.on_bus_read_u16(0x08000000);
-    assert(backlog.entries().empty());
+    assert(history.entries().empty());
 
     // Script table read (0x08FBE000): must be ignored, outside dialogue string bounds
     backlog.on_bus_read_u16(0x08FBE000);
-    assert(backlog.entries().empty());
+    assert(history.entries().empty());
 
     // Character 0 read at start of dialogue 0x08FBD378 ("Looks like nobody's home.")
     backlog.on_bus_read_u16(0x08FBD378);
     // Not confirmed yet until sequential typewriter character 1 is read
-    assert(backlog.entries().empty());
+    assert(history.entries().empty());
 
     // Character 1 read at 0x08FBD37A: confirms active rendering on screen!
     backlog.on_bus_read_u16(0x08FBD37A);
-    assert(!backlog.entries().empty());
-    assert(backlog.entries().back().speaker == "Donald");
-    assert(backlog.entries().back().text.find("nobody's home") != std::string::npos);
+    assert(!history.entries().empty());
+    assert(history.entries().back().speaker == "Donald");
+    assert(history.entries().back().text.find("nobody's home") != std::string::npos);
 
     // Duplicate character read of the same active line must not create duplicate entries
-    size_t count_before = backlog.entries().size();
+    size_t count_before = history.entries().size();
     backlog.on_bus_read_u16(0x08FBD37A);
-    assert(backlog.entries().size() == count_before);
+    assert(history.entries().size() == count_before);
 
     // Unrendered phantom dialogue (e.g. Marluxia 0x08FBDF74 char 0 without char 1) must never push
     backlog.on_bus_read_u16(0x08FBDF74);
-    assert(backlog.entries().size() == count_before);
+    assert(history.entries().size() == count_before);
 
-    // Push duplicate testing
-    backlog.push_entry("Donald", "We have to if we're gonna find the king...");
-    size_t count_after_donald = backlog.entries().size();
-    assert(count_after_donald == count_before + 1);
-
-    // Immediate duplicate rejection
-    backlog.push_entry("Donald", "We have to if we're gonna find the king...");
-    assert(backlog.entries().size() == count_after_donald);
-
-    // Ping-pong duplicate rejection (within 3 entries)
-    backlog.push_entry("Goofy", "You sure we should just barge in like this?");
-    assert(backlog.entries().size() == count_after_donald + 1);
-    backlog.push_entry("Donald", "We have to if we're gonna find the king...");
-    assert(backlog.entries().size() == count_after_donald + 1);
+    // A new line goes through the same history the panel draws from
+    history.push_entry("Donald", "We have to if we're gonna find the king...");
+    assert(history.entries().size() == count_before + 1);
 
     backlog.clear();
-    backlog.push_entry("Naminé", "I'm sorry, Sora... I altered your memories.");
-    assert(!backlog.entries().empty());
-    assert(backlog.entries().back().speaker == "Naminé");
-    assert(backlog.entries().back().text.find("altered your memories") != std::string::npos);
+    assert(history.entries().empty());
+    history.push_entry("Naminé", "I'm sorry, Sora... I altered your memories.");
+    assert(!history.entries().empty());
+    assert(history.entries().back().speaker == "Naminé");
+    assert(history.entries().back().text.find("altered your memories") != std::string::npos);
+    backlog.clear();
 
     g_runtime_bus_read_override = prev_override;
 
-    std::cout << "[PASS] C++ DialogueBacklog unit test passed" << std::endl;
+    std::cout << "[PASS] C++ dialogue observer unit test passed" << std::endl;
 }
 
 static void test_widescreen_view_modes() {

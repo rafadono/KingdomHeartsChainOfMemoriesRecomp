@@ -3,7 +3,7 @@
 #include "gbaimp/host_settings.h"
 #include "gbaimp/input_enhancements.h"
 #include "text_overlay/text_adapter.h"
-#include "dialogue_backlog.h"
+#include "gbaimp/text_history.h"
 #include "widescreen_adapter.h"
 #include "gbaimp/capture_harness.h"
 #include "runtime_bus_bridge.h"
@@ -248,7 +248,7 @@ int hdtext_set(const char* key, int v) {
 
 // ---- Menu rows: this game's labels, tooltips and ranges ---------------------------------------------------
 // Applied over the standard settings of the library and used to create the rows that only this game has
-// (hdtext.*, dialogue.*). `choices` is null for the dynamic font list.
+// (hdtext.*). `choices` is null for the dynamic font list.
 struct Row {
     const char* id;
     const char* label;
@@ -346,10 +346,6 @@ const Row kRows[] = {
      SettingKind::Bool, 0, 1, 1, nullptr, 0},
     {"hdtext.min_size", "Minimum Size", "Auto-fit lower bound in tenths of a GBA pixel",
      SettingKind::Int, 30, 120, 5, nullptr, 0},
-    {"dialogue.backlog_enable", "Conversation Log (Backlog)", "Translucent story history (press F2 or the gamepad Back button)",
-     SettingKind::Bool, 0, 1, 1, nullptr, 0},
-    {"dialogue.open_backlog", "Open Conversation Log", "View transcript and story history",
-     SettingKind::Action, 0, 0, 0, nullptr, 0},
     {"audio.hd_enabled", "HD Re:CoM Soundtrack", "High-fidelity PS2 Re:CoM soundtrack",
      SettingKind::Bool, 0, 1, 1, nullptr, 0},
     {"audio.bgm_volume", "Music (BGM) Volume (%)", "Independent music volume (0% to 150%)",
@@ -501,21 +497,9 @@ void build_registry(SettingsRegistry& reg) {
     };
     reg.add_ini_extension(std::move(font));
 
-    // Host-only rows: conversation log.
-    for (const Row& r : kRows) {
-        if (std::strncmp(r.id, "dialogue.", 9) != 0) continue;
-        Setting s = make_host_row(r);
-        if (std::strcmp(r.id, "dialogue.backlog_enable") == 0) {
-            s.ini_section = "Dialogue";
-            s.ini_key = "backlog_enable";
-            s.get = [] { return DialogueBacklog::instance().is_enabled() ? 1 : 0; };
-            s.set = [](int v) { DialogueBacklog::instance().set_enabled(v != 0); };
-        } else if (std::strcmp(r.id, "dialogue.open_backlog") == 0) {
-            s.action = [] { DialogueBacklog::instance().set_open(true); };
-            s.save_after_action = false;
-        }
-        reg.add(std::move(s));
-    }
+    // Conversation log rows (dialogue.backlog_enable / dialogue.open_backlog): ids, labels, menu section and
+    // [Dialogue] ini key are the defaults of the library helper.
+    gbaimp::register_text_history_settings(reg, gbaimp::TextHistory::instance());
 
     for (const char* id : kLegacyTextIds) reg.add_ignored_id(id);
     for (const char* key : kLegacyTextIniKeys) reg.add_ignored_ini_key(key);

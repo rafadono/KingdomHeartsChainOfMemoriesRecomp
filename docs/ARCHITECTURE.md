@@ -29,7 +29,7 @@ when it is compiled in). `run_game()` resets every game-owned hook at start, so 
 | `runtime_ui_standard.{h,cpp}` | view-mode labels for the stock settings menu (the rewrite is `gbaimp/runtime_ui_glue.h`, no RESUME row) and the menu pointer |
 | `runtime_ui_imgui_enhanced.cpp` | replacement of recomp-ui's ImGui menu renderer (draggable window); compiled instead of `runtime_ui_imgui.cpp` |
 | `widescreen_adapter.{h,cpp}` | the game's profile of `gbaimp::Widescreen`: battle detection (mode descriptors, mode-function addresses, IWRAM mode words), the HUD-aware sprite provider, and the per-function-entry work (music trigger, battle tracking, overlay capture) |
-| `dialogue_backlog.{h,cpp}` | conversation log: bus-read observer that captures dialogue text, sidebar renderer, hotkeys |
+| `dialogue_backlog.{h,cpp}` | conversation log observer: watches the guest bus reads that type cutscene dialogue and pushes `{speaker, text}` into `gbaimp::TextHistory` (panel, hotkeys, drawing and entry store are the library's) |
 | `text_overlay/` | HD dialogue text (below) |
 | `ram_overlay_dispatch.{h,cpp}` | generated dispatcher: native code for the routines the game runs from IWRAM/EWRAM |
 | `text_fonts.h`, `text_fonts_data.cpp` | embedded PT Sans / Narrow / Serif subsets (generated, see `third_party/fonts/README.md`) |
@@ -45,11 +45,11 @@ gbarecomp and recomp-ui call SDL directly, so the game observes those calls: Lin
 (`gbaimp::install_sdl_interposers`, called from `khcom_install_sdl_interposers()` first in `main()`). Handlers call SDL only through
 `gbaimp::sdl_real()`.
 
-- `PollEvent`: refreshes widescreen state, offers events to the backlog and the perf HUD (consumed events are dropped).
+- `PollEvent`: refreshes widescreen state, offers events to `gbaimp::TextHistory` and the perf HUD (consumed events are dropped).
 - `UpdateTexture`: native-frame capture hook, then colour-profile correction of the 240x160 / 284x160 RGB24 frame.
 - `RenderCopy` (game image only): computes the viewport (`gbaimp::widescreen_compute_viewport`), clears the bars, copies the image,
   draws the screen mask, then the **HD text overlay** (`engine::on_present`), so the settings menu that gbarecomp draws afterwards stays above the text.
-- `RenderPresent`: frame interpolation, perf HUD, backlog sidebar, harness capture, then the real present.
+- `RenderPresent`: frame interpolation, perf HUD, conversation log sidebar (`TextHistory::render_sidebar`), harness capture, then the real present.
 - `OpenAudioDevice` / `QueueAudio`: audio path (below).
 
 ### View mode policy (3:2 vs 16:9)
@@ -76,7 +76,7 @@ function-entry hook on the emulation thread) calls `HdAudioPlayer::trigger_song`
 
 ### Config and UI
 The standard settings come from `gbaimp::register_standard_settings()` (`gbaimp/host_settings.h`); `game_config.cpp` applies this game's labels, tooltips and ranges (`kRows`), adds the `hdtext.*`
-and `dialogue.*` rows (backed by `overlay::settings()` and `DialogueBacklog`), the font-by-name ini line and the legacy keys, and orders the menu sections. `gbaimp::RuntimeUiBinding` exposes the registry to the runtime menu. Every change saves
+rows (backed by `overlay::settings()`), the conversation log rows (`gbaimp::register_text_history_settings`: `dialogue.backlog_enable` and `dialogue.open_backlog`, `[Dialogue]` in the ini), the font-by-name ini line and the legacy keys, and orders the menu sections. `gbaimp::RuntimeUiBinding` exposes the registry to the runtime menu. Every change saves
 `khcom_config.ini` (sections `[Video] [Audio] [Dialogue] [HdText] [Controls] [Gameplay] [Diagnostics]`); key bindings are saved by the library in `keybinds.ini`.
 Legacy keys of removed features (`hud_anchoring`, `text_mode`, `font_*`, `line_capacity`, `soft_word_wrap`) are parsed and ignored. Harness runs (`KHCOM_*`) never write the file.
 

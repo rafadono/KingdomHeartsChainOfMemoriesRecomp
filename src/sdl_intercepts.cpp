@@ -11,7 +11,7 @@
 #include "gbaimp/game_host.h"
 #include "gbaimp/widescreen.h"
 #include "gbaimp/capture_harness.h"
-#include "dialogue_backlog.h"
+#include "gbaimp/text_history.h"
 #include "gbaimp_integration.h"
 #include "text_overlay/engine_hooks.h"
 #include "ram_overlay_dispatch.h"
@@ -35,7 +35,7 @@ void on_poll() {
 }
 
 bool on_event(SDL_Event& event) {
-    return khcom::DialogueBacklog::instance().handle_event(event);
+    return gbaimp::TextHistory::instance().handle_event(event);
 }
 
 bool wants_native_frame() { return gbaimp::capture::wants_native_frame(); }
@@ -53,7 +53,7 @@ void after_game_image(SDL_Renderer* renderer, const SDL_Rect& dst) {
 }
 
 void render_present_overlay(SDL_Renderer* renderer, int win_w, int win_h) {
-    khcom::DialogueBacklog::instance().render_sidebar(renderer, win_w, win_h);
+    gbaimp::TextHistory::instance().render_sidebar(renderer, win_w, win_h);
 }
 
 void before_present(SDL_Renderer* renderer) {
