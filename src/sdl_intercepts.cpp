@@ -10,7 +10,7 @@
 //     Table of the executable (and loaded modules) to the same handlers.
 #include "gbaimp/game_host.h"
 #include "gbaimp/widescreen.h"
-#include "capture_harness.h"
+#include "gbaimp/capture_harness.h"
 #include "dialogue_backlog.h"
 #include "music_hook.h"
 #include "text_overlay/engine_hooks.h"
@@ -38,10 +38,10 @@ bool on_event(SDL_Event& event) {
     return khcom::DialogueBacklog::instance().handle_event(event);
 }
 
-bool wants_native_frame() { return khcom::capture::active(); }
+bool wants_native_frame() { return gbaimp::capture::wants_native_frame(); }
 
 void on_native_frame(const void* pixels, int pitch, int w, int h) {
-    khcom::capture::on_native_frame(pixels, pitch, w, h);   // raw PPU framebuffer
+    gbaimp::capture::on_native_frame(pixels, pitch, w, h);   // raw PPU framebuffer
 }
 
 // Output-resolution dialogue overlay (engine side). It is drawn right after the game image, NOT at
@@ -57,7 +57,7 @@ void render_present_overlay(SDL_Renderer* renderer, int win_w, int win_h) {
 }
 
 void before_present(SDL_Renderer* renderer) {
-    if (khcom::capture::active()) khcom::capture::on_before_present(renderer);
+    gbaimp::capture::on_before_present(renderer);   // inert unless a KHCOM_* harness variable is set
 }
 
 void print_stats(const char* tag) {

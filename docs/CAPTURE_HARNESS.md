@@ -1,54 +1,35 @@
 # Headless capture + scripted-input harness
 
 Developer tooling to look at the game without a screen: run it headless (SDL dummy video driver, software
-renderer), drive it with a deterministic input script, and save PNG frames that can be opened with any image
-viewer (or an AI assistant's image reader). Everything is **env-gated**: with no `KHCOM_*` harness variable the
-code paths cost one cached flag test per present / per texture update and nothing else.
+renderer), drive it with a deterministic input script and save PNG frames that can be opened with any image
+viewer. Everything is **env-gated**: with no `KHCOM_*` harness variable set the hooks cost one cached flag test
+and nothing else.
 
-Code: `src/capture_harness.{h,cpp}` (hooks in `src/sdl_intercepts.cpp`, `src/game_config.cpp`, `src/main.cpp`).
+The harness is the generic `gbaimp::capture` module of gba-improvements. Its reference documentation (every
+variable, the input script syntax, frame numbering, limitations) is
+[external/gba-improvements/docs/CAPTURE_HARNESS.md](../external/gba-improvements/docs/CAPTURE_HARNESS.md); this page
+only describes what is specific to this game. The variable prefix is `KHCOM` (`KHCOM_CAPTURE_DIR`,
+`KHCOM_CAPTURE_FRAMES`, `KHCOM_CAPTURE_MODE`, `KHCOM_CAPTURE_VARIANTS`, `KHCOM_EXIT_AFTER_CAPTURE`,
+`KHCOM_EXIT_FRAME`, `KHCOM_WINDOW_SIZE`, `KHCOM_INPUT_SCRIPT`, `KHCOM_PUSH_KEYS`, `KHCOM_SET`,
+`KHCOM_SAVESTATE_LOAD`, `KHCOM_SAVESTATE_SAVE`, `KHCOM_FAST`).
+
+Wiring in this repository: `khcom::configure_capture_harness()` (`src/game_config.cpp`, called first thing in
+`main()` in `src/main.cpp`), the SDL hooks in `src/sdl_intercepts.cpp` (`wants_native_frame` / `on_native_frame` /
+`before_present`) and the per-frame hook in `create_run_options()`.
 Runners: `tools/capture/run_capture.ps1` (Windows) and `tools/capture/run_capture.sh` (Linux / Docker).
-Montage / crop tool: `tools/capture/montage.py` (Python stdlib only). Scenario: `tools/capture/scenarios/dialogue_study.ps1`.
+Montage / crop tool: `tools/capture/montage.py` (Python standard library only). Scenario: `tools/capture/scenarios/dialogue_study.ps1`.
 
-## Frame numbers
+## Game-specific settings
 
-Every frame number below is the **PPU frame counter** of the runtime (0 at boot, restored by a savestate load).
-Captures arm when the counter reaches the number and are written at the next present (so the image is the frame
-at, or at most one frame after, the requested number; with fast-forward up to `multiplier - 1` frames later).
-
-## Environment variables
-
-| Variable | Meaning |
-|---|---|
-| `KHCOM_CAPTURE_DIR=<dir>` | Output directory (created). Default `captures` when `KHCOM_CAPTURE_FRAMES` is set. |
-| `KHCOM_CAPTURE_FRAMES=300,600-610,2000-3000/250` | Frames to capture. Ranges `a-b`, optional `/step`. |
-| `KHCOM_CAPTURE_MODE=output\|native\|both` | `output` (default): the final composed window image (after filters, grid mask, overlays, letterbox bars), read back with `SDL_RenderReadPixels` right before the real present; its size is the renderer output size. `native`: the PPU framebuffer as passed to `SDL_UpdateTexture`, **before** colour correction, 284x160 (the 240x160 picture sits in the middle with 22 px black pillars in 3:2 mode; 16:9 battles fill all 284 px). |
-| `KHCOM_CAPTURE_VARIANTS="852x480 screen_mask=1\|960x640 screen_mask=0"` | One `output` image per entry at each captured frame: window size `WxH` and/or live settings (`key=value`, khcom_config.ini keys `screen_mask`, `mask_intensity`, `color_profile`, `xbrz_scale`, `motion_smoothing`, `hdtext_*` (integer keys of `[HdText]`, see docs/TEXT_OVERLAY_RENDER.md) plus `hdtext_family` (family by index), `perf_mode`) are applied, the harness waits for the size to settle (>= 4 presents) and grabs. Use it on a static frame. File name `f<frame>_output_<entry sanitized>.png`. |
-| `KHCOM_EXIT_AFTER_CAPTURE=1` | Quit cleanly (SDL_QUIT) once every requested image has been written. (The runners set it.) |
-| `KHCOM_EXIT_FRAME=<n>` | Quit at that frame even without captures. |
-| `KHCOM_WINDOW_SIZE=WxH` | Window / output size. Applied with `SDL_SetWindowSize` on the first presents (gbarecomp's own `--scale` only gives `base * k`); the log prints `window/output size is now WxH`. The game keeps 3:2 inside the window (pillar/letter boxes), exactly as in a resized real window. |
-| `KHCOM_INPUT_SCRIPT=<file or inline>` | Scripted input, see below. |
-| `KHCOM_PUSH_KEYS="9000:Escape;9200:F2"` | Host key presses: `<frame>:<SDL key name>` entries separated by `;`, pushed as SDL key events at that emulated frame (for example `Escape` opens the settings menu, `F2` the conversation log). Unknown names are reported on stderr. Not translated to GBA buttons (use `KHCOM_INPUT_SCRIPT` for those). |
-| `KHCOM_SET="screen_mask=0;hdtext_enabled=1;hdtext_size=100"` | Settings overrides at start, same keys as `khcom_config.ini`, applied after the file. A harness run never writes `khcom_config.ini`. |
-| `KHCOM_SAVESTATE_LOAD=<file>` | Load a savestate at start (translated to gbarecomp's `--load-state`). |
-| `KHCOM_SAVESTATE_SAVE=<frame>:<slot>` | Save into slot `<slot>` (file `<rom name>.state<slot>` next to the ROM) at that frame (translated to `GBARECOMP_ASSIST_SCRIPT=<frame>:save<slot>`; the pump index equals the frame number to within a few frames). |
-| `KHCOM_FAST=1` | 4x fast-forward (`GBARECOMP_ASSIST_SCRIPT=1:fast_on`). The game stays deterministic; only wall clock changes. |
-| `KHCOM_CAPTURE_*`/`SDL_VIDEODRIVER=dummy`, `SDL_AUDIODRIVER=dummy` | Set by the runners. Without the dummy driver the normal window opens. |
-
-## Input script
-
-Text file (or the inline string itself); entries separated by newlines or `;`; `#` starts a comment.
-
-```
-120-125: A                   # hold A for frames 120..125 (inclusive)
-200: START                   # a single frame N is held for frames N and N+1
-1500-6000 every 100 hold 3: A      # press A for 3 frames at the start of every 100-frame period
-300-340: UP+A                # several buttons
-```
-Buttons: `A B L R START SELECT UP DOWN LEFT RIGHT`. The script is expanded into a
-`frame,0xKEYINPUT` trace (active-low) and handed to gbarecomp's deterministic **input replay**
-(`GBARECOMP_INPUT_REPLAY=<capture dir>/input_trace.txt`), so the same script always yields the same run. (Writing
-KEYINPUT from the per-frame hook is not enough: the host pump overwrites it before the guest reads it.) No devices are
-needed. Do not set `GBARECOMP_INPUT_REPLAY` yourself at the same time.
+* `KHCOM_SET="screen_mask=0;hdtext_enabled=1;hdtext_size=100"`: overrides applied over `khcom_config.ini` at start (the
+  keys of the file, plus `hdtext_family` = family by index). A harness run never writes `khcom_config.ini`.
+* `KHCOM_CAPTURE_VARIANTS="852x480 screen_mask=1|960x640 screen_mask=0"`: the live settings of a variant are applied by this
+  game's callback: `screen_mask`, `mask_intensity`, `color_profile`, `xbrz_scale`, `motion_smoothing`, `perf_mode`
+  and the `hdtext_*` keys (see `docs/TEXT_OVERLAY_RENDER.md`, plus `hdtext_family`). Other keys are ignored.
+* `native` captures are 284x160 (the 240x160 picture sits in the middle with 22 px black pillars in 3:2 mode; 16:9
+  battles fill all 284 px).
+* The `output` image of a run with `fps_target` above 60 or motion smoothing on has been seen to differ by one presented frame between
+  runs of the same executable; for a bit-exact comparison pass `KHCOM_SET="fps_target=0;motion_smoothing=0"`. `native` captures are always exact.
 
 ## Running
 

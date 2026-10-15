@@ -137,7 +137,7 @@ Monospace (Cousine), Pixel Terminal (VT323), Pixel Arcade (Press Start 2P); all 
   scale / size changes rebuild, `invalidate()` flushes; fades dim; user fonts (valid / truncated / garbage / non-ttf) and a
   mutation fuzz of the validator.
 * PNG dump (no game needed), e.g. in the Docker image or any g++ with SDL2:
-  `g++ -O2 -std=c++17 -o overlay_dump tools/overlay_dump.cpp src/text_overlay/overlay_{fonts,fonts_data,layout,raster,renderer}.cpp src/text_fonts_data.cpp src/capture_harness.cpp $(sdl2-config --cflags --libs)`
+  `g++ -O2 -std=c++17 -o overlay_dump tools/overlay_dump.cpp src/text_overlay/overlay_{fonts,fonts_data,layout,raster,renderer}.cpp src/text_fonts_data.cpp external/gba-improvements/src/capture_harness.cpp -Iexternal/gba-improvements/include $(sdl2-config --cflags --libs)`
   then `SDL_VIDEODRIVER=dummy ./overlay_dump --out out --scales 3,4,5.4,6.19 [--bg frame.ppm --bg-x 22] [--fonts dir]`.
   `--bg` takes a P6 PPM of a game frame (`python tools/overlay_png_to_ppm.py frame.png frame.ppm`; `--bg-x 22` for 284x160 captures);
   the engine's own text area is painted over with the box colour. Output per scale: `families_<s>x.png` (every family, em 10),

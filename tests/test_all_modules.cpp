@@ -9,7 +9,7 @@
 #include "gbaimp/frame_interpolator.h"
 #include "gbaimp/perf_hud.h"
 #include "armv4t/runtime_arm.h"
-#include "capture_harness.h"
+#include "gbaimp/capture_harness.h"
 #include "game_config.h"
 #include "recomp_runtime_ui.h"
 
@@ -684,66 +684,21 @@ static void test_view_mode_return_to_original() {
 }
 
 static void test_capture_harness() {
-    // Harness OFF (no KHCOM_* variables): inert, no argv injection.
+    // The harness itself (parsers, PNG writer, hooks) is tested in gba-improvements. Here: this game's wiring. The
+    // variables are KHCOM_*; without any of them the harness is inert and injects nothing into the runtime's argv.
     const char* vars[] = {"KHCOM_CAPTURE_DIR", "KHCOM_CAPTURE_FRAMES", "KHCOM_INPUT_SCRIPT", "KHCOM_SET",
                           "KHCOM_WINDOW_SIZE", "KHCOM_SAVESTATE_LOAD", "KHCOM_SAVESTATE_SAVE", "KHCOM_EXIT_FRAME",
-                          "KHCOM_CAPTURE_VARIANTS", "KHCOM_FAST"};
+                          "KHCOM_CAPTURE_VARIANTS", "KHCOM_FAST", "KHCOM_PUSH_KEYS", "KHCOM_EXIT_AFTER_CAPTURE"};
     bool any_env = false;
     for (const char* v : vars) if (std::getenv(v)) any_env = true;
+    khcom::configure_capture_harness();
     if (!any_env) {
-        assert(!khcom::capture::active());
-        assert(khcom::capture::extra_runtime_args().empty());
-        assert(khcom::capture::settings_overrides().empty());
+        assert(!gbaimp::capture::active());
+        assert(!gbaimp::capture::wants_native_frame());
+        assert(gbaimp::capture::extra_runtime_args().empty());
+        assert(gbaimp::capture::settings_overrides().empty());
     }
-
-    // PNG writer: 3x2 RGB with padded pitch; verify signature, IHDR, CRCs, stored-deflate payload and Adler-32.
-    const std::uint8_t px[2 * 12] = {
-        255, 0, 0,   0, 255, 0,   0, 0, 255,   9, 9, 9,
-        1, 2, 3,     4, 5, 6,     7, 8, 9,     9, 9, 9};
-    const std::string path = (std::filesystem::temp_directory_path() / "khcom_capture_test.png").string();
-    assert(khcom::capture::write_png_rgb(path, px, 3, 2, 12));
-    std::ifstream in(path, std::ios::binary);
-    std::vector<std::uint8_t> d((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    in.close();
-    std::filesystem::remove(path);
-    static const std::uint8_t sig[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
-    assert(d.size() > 8 && std::memcmp(d.data(), sig, 8) == 0);
-    auto be32 = [&](size_t o) { return (std::uint32_t(d[o]) << 24) | (d[o + 1] << 16) | (d[o + 2] << 8) | d[o + 3]; };
-    auto crc = [](const std::uint8_t* p, size_t n) {
-        std::uint32_t c = 0xFFFFFFFFu;
-        for (size_t i = 0; i < n; ++i) {
-            c ^= p[i];
-            for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : (c >> 1);
-        }
-        return ~c;
-    };
-    size_t pos = 8;
-    std::vector<std::uint8_t> idat;
-    bool saw_ihdr = false, saw_iend = false;
-    while (pos + 12 <= d.size()) {
-        const std::uint32_t len = be32(pos);
-        const std::string tag(reinterpret_cast<const char*>(&d[pos + 4]), 4);
-        assert(pos + 12 + len <= d.size());
-        assert(be32(pos + 8 + len) == crc(&d[pos + 4], 4 + len));
-        if (tag == "IHDR") { assert(be32(pos + 8) == 3 && be32(pos + 12) == 2 && d[pos + 16] == 8 && d[pos + 17] == 2); saw_ihdr = true; }
-        if (tag == "IDAT") idat.insert(idat.end(), d.begin() + pos + 8, d.begin() + pos + 8 + len);
-        if (tag == "IEND") saw_iend = true;
-        pos += 12 + len;
-    }
-    assert(saw_ihdr && saw_iend && pos == d.size());
-    assert(idat.size() > 6 && idat[0] == 0x78);
-    // one stored block: [BFINAL=1, LEN, NLEN, raw...], then Adler-32
-    assert(idat[2] == 1);
-    const size_t blen = idat[3] | (idat[4] << 8);
-    assert(blen == 2 * (1 + 9) && static_cast<std::uint16_t>(idat[5] | (idat[6] << 8)) == static_cast<std::uint16_t>(~blen));
-    const std::uint8_t* raw = &idat[7];
-    assert(raw[0] == 0 && std::memcmp(raw + 1, px, 9) == 0);
-    assert(raw[10] == 0 && std::memcmp(raw + 11, px + 12, 9) == 0);
-    std::uint32_t a = 1, b = 0;
-    for (size_t i = 0; i < blen; ++i) { a = (a + raw[i]) % 65521; b = (b + a) % 65521; }
-    const size_t ad = 7 + blen;
-    assert(idat.size() == ad + 4 && ((std::uint32_t(idat[ad]) << 24) | (idat[ad + 1] << 16) | (idat[ad + 2] << 8) | idat[ad + 3]) == ((b << 16) | a));
-    std::cout << "[PASS] Capture harness: inert without env, PNG writer structure/CRC/Adler verified" << std::endl;
+    std::cout << "[PASS] Capture harness: configured for the KHCOM_* variables, inert without them" << std::endl;
 }
 
 // khcom_config.ini through the settings registry (game_config.cpp + gbaimp/host_settings.h): a file written by an earlier

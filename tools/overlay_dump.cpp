@@ -8,7 +8,7 @@
 // stdout). `--bg` is a binary PPM (P6) of the game frame (see tools/overlay_png_to_ppm.py); `--bg-x` is the x offset of
 // the 240x160 game image inside it (22 for the 284x160 widescreen captures). The engine's own text area in the
 // background is painted over with the colour of the box to the right of it.
-#include "../src/capture_harness.h"
+#include "gbaimp/capture_harness.h"
 #include "../src/text_overlay/overlay_fonts.h"
 #include "../src/text_overlay/overlay_synth.h"
 #include "../src/text_overlay/overlay_types.h"
@@ -118,7 +118,7 @@ bool render_cell(const std::vector<uint8_t>& game, float scale, const OverlaySet
 }
 
 void save(const Sheet& s, const std::string& path) {
-    if (khcom::capture::write_png_rgb(path, s.rgb.data(), s.w, s.h, s.w * 3)) std::printf("wrote %s (%dx%d)\n", path.c_str(), s.w, s.h);
+    if (gbaimp::capture::write_png_rgb(path, s.rgb.data(), s.w, s.h, s.w * 3)) std::printf("wrote %s (%dx%d)\n", path.c_str(), s.w, s.h);
     else std::printf("FAILED to write %s\n", path.c_str());
 }
 

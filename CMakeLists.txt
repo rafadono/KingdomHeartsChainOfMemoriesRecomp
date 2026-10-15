@@ -77,7 +77,6 @@ set(KHCOM_RUNTIME_SOURCES
     src/game_config.cpp
     src/gbaimp_integration.cpp
     src/sdl_intercepts.cpp
-    src/capture_harness.cpp
     src/runtime_ui_standard.cpp
     src/dialogue_backlog.cpp
     src/text_fonts_data.cpp
@@ -197,7 +196,6 @@ add_executable(khcom_unit_tests
     tests/test_overlay_engine.cpp
     src/gbaimp_integration.cpp
     src/sdl_intercepts.cpp
-    src/capture_harness.cpp
     src/runtime_ui_standard.cpp
     src/dialogue_backlog.cpp
     src/text_fonts_data.cpp

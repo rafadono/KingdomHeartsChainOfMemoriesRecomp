@@ -5,7 +5,7 @@
 #include "text_overlay/overlay_types.h"
 #include "dialogue_backlog.h"
 #include "widescreen_adapter.h"
-#include "capture_harness.h"
+#include "gbaimp/capture_harness.h"
 #include "runtime_bus_bridge.h"
 #include "gba/gba_bus.h"
 #include "gba/gba_io.h"
@@ -445,7 +445,7 @@ void build_registry(SettingsRegistry& reg) {
     // Like the original loader: a missing file is not created just by starting the game.
     reg.set_write_defaults_if_missing(false);
     // Headless harness runs never persist their overrides.
-    reg.set_save_blocked([] { return capture::active(); });
+    reg.set_save_blocked([] { return gbaimp::capture::active(); });
 
     gbaimp::StandardSettingsOptions opt;
     opt.exclude = {"audio.master_volume", "audio.sample_rate"};   // this game has neither
@@ -557,6 +557,16 @@ int harness_set_setting(const char* ini_key, int value) {
 
 } // namespace
 
+void configure_capture_harness() {
+    gbaimp::capture::CaptureConfig c;
+    c.env_prefix = "KHCOM";
+    c.log_tag = "capture";
+#if defined(GBARECOMP_RUNTIME_UI)
+    c.apply_setting = &harness_set_setting;   // KHCOM_CAPTURE_VARIANTS: display / HD text / performance HUD keys
+#endif
+    gbaimp::capture::configure(c);
+}
+
 void save_khcom_config() {
 #if defined(GBARECOMP_RUNTIME_UI)
     settings_registry().save_ini();
@@ -567,7 +577,7 @@ void load_khcom_config() {
 #if defined(GBARECOMP_RUNTIME_UI)
     // Headless harness overrides (KHCOM_SET), same keys as the ini; applied after the file.
     std::string overrides;
-    for (const auto& kv : capture::settings_overrides()) overrides += kv.first + "=" + std::to_string(kv.second) + '\n';
+    for (const auto& kv : gbaimp::capture::settings_overrides()) overrides += kv.first + "=" + std::to_string(kv.second) + '\n';
     settings_registry().load_ini(overrides);
 #endif
 }
@@ -588,7 +598,6 @@ void toggle_runtime_menu() {}
 
 gbarecomp::RunOptions create_run_options() {
 #if defined(GBARECOMP_RUNTIME_UI)
-    if (capture::active()) capture::set_setting_callback(&harness_set_setting);
 #endif
     // Connect the gba-improvements library (hooks + HUD anchoring zones) before any
     // module can run or persist settings.
@@ -630,7 +639,7 @@ gbarecomp::RunOptions create_run_options() {
         if (bus) {
             uint16_t host = bus->io().host_keyinput();
             uint16_t modified = gbaimp::InputEnhancements::instance().process_keyinput(host);
-            if (capture::active()) capture::on_emulated_frame(info ? info->frame_count : 0);   // headless harness
+            if (gbaimp::capture::active()) gbaimp::capture::on_emulated_frame(info ? info->frame_count : 0);   // headless harness
             bus->io().set_keyinput(modified);
         }
     };

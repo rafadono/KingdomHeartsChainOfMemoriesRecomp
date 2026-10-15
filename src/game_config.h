@@ -16,6 +16,9 @@ bool is_runtime_menu_open();
 void open_runtime_menu();
 void close_runtime_menu();
 void toggle_runtime_menu();
+// Configures the library capture harness for this game (variables KHCOM_*, see docs/CAPTURE_HARNESS.md).
+// Call first thing in main().
+void configure_capture_harness();
 void save_khcom_config();
 void load_khcom_config();
 // (gba-improvements hooks and HUD zones: see gbaimp_integration.h)

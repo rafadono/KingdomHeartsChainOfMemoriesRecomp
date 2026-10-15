@@ -8,7 +8,7 @@
 #include "text_overlay/overlay_synth.h"
 #include "text_overlay/overlay_types.h"
 #include "text_overlay/overlay_fade.h"
-#include "capture_harness.h"
+#include "gbaimp/capture_harness.h"
 
 #include <SDL.h>
 
