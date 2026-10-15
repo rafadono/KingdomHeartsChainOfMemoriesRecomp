@@ -127,7 +127,7 @@ Controller (Gamepad), Keyboard Controls, Gameplay & Assist, Diagnostics & HUD, S
 
 - **`3:2 (Native)`**: the original 240x160 picture, letter/pillar-boxed. The game behaves exactly as the original: switching back
   to 3:2 (even in the middle of a battle) removes every widescreen provider and HUD displacement and resets the PPU policy globals
-  to the faithful values (`apply_view_policy()` in `src/widescreen_adapter.cpp`, covered by the *view-mode return-to-original* test).
+  to the faithful values (the policy is the `Widescreen` module of gba-improvements, configured by `src/widescreen_adapter.cpp` and covered by the *view-mode return-to-original* test).
 - **`16:9 (Battles only)`**: a 284x160 picture **only while a battle arena is shown**. Field maps, menus, the title screen and story
   cutscenes stay 3:2 with black pillars. During battles the BG2/BG3 arena backgrounds reveal real extra scenery and the HUD (player
   portrait/HP top left, card deck bottom right) is shifted into the corners by exactly the real extra width of each side. **HUD
@@ -166,7 +166,7 @@ actors waiting off-stage and stretched UI). Details: `src/widescreen_adapter.h` 
 
 ### Audio
 
-- **HD soundtrack** (the switch is on by default, but nothing plays until you provide and map WAV files): the game's own m4a "song start" calls are observed (`src/music_hook.cpp`) and a mapped song id plays a
+- **HD soundtrack** (the switch is on by default, but nothing plays until you provide and map WAV files): the game's own m4a "song start" calls are observed (the `M4aMusicHook` module of gba-improvements, set up in `src/gbaimp_integration.cpp`) and a mapped song id plays a
   WAV from [config/music_tracks.ini](config/music_tracks.ini) (the audio files are **not** included; the ids shipped there are placeholders, see
   [docs/GBA_IMPROVEMENTS_INTEGRATION.md](docs/GBA_IMPROVEMENTS_INTEGRATION.md)). The original music keeps playing underneath. Independent BGM and SFX volume (0-150 %).
 - **DSP chain** on the real audio path: equalizer presets (Flat, Warm Retro, Crisp Modern, Bass Boost), DAC anti-aliasing, stereo width, peak limiter.
@@ -217,16 +217,16 @@ An index of every script is in [tools/README.md](tools/README.md).
 - **Capture harness**: headless run (SDL dummy drivers), deterministic scripted input, PNG capture of native / output frames, setting overrides,
   savestates, window sizes. Env-gated (`KHCOM_*`). See [docs/CAPTURE_HARNESS.md](docs/CAPTURE_HARNESS.md) and `tools/capture/`.
 - `KHCOM_LOG_INTERPOSE=1` prints the SDL interposition status and counters (and the first m4a song starts) on stderr.
-- `tools/overlay_dump.cpp`, `tools/overlay_png_to_ppm.py`, `tools/gen_font_data.py`: PNG dump of the text overlay and regeneration of the embedded font data
-  ([third_party/fonts/README.md](third_party/fonts/README.md)).
-- `tools/update_symbols.py`, `tools/import_decomp_symbols.py`, `tools/dialogue_text_tool.py`: symbol and offline dialogue-script helpers (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+- `tools/overlay_dump.cpp`: PNG dump of the text overlay. The helpers `png_to_ppm.py` and `gen_font_data.py` (regeneration of the embedded font data,
+  [third_party/fonts/README.md](third_party/fonts/README.md)) live in `external/gba-improvements/tools/`.
+- `tools/dialogue_text_tool.py`: offline dialogue-script helper (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). The symbol helpers `update_symbols.py` and `import_decomp_symbols.py` live in `external/gba-improvements/tools/`.
 - Recompilation helper scripts (control-flow tracing, coverage audit, RAM dispatch generation) live in the library: `external/gba-improvements/tools/`.
 
 ---
 
 ## License and notices
 
-- This repository does not yet contain a `LICENSE` file (the owner has not chosen the terms). It is built on `gbarecomp`
+- This repository is licensed under the **PolyForm Noncommercial License 1.0.0** (see [LICENSE](LICENSE)). It is built on `gbarecomp`
   (**PolyForm Noncommercial License 1.0.0**), so the combined program is bound by those terms; read `gbarecomp/LICENSE` before redistributing.
 - `external/gba-improvements`: MIT. `external/recomp-ui`: MIT (bundles Dear ImGui, see its own files). SDL2: zlib (downloaded, not committed).
 - Embedded fonts (SIL OFL 1.1) and `stb_truetype` (public domain / MIT): see [NOTICE](NOTICE) and [third_party/fonts/README.md](third_party/fonts/README.md).
