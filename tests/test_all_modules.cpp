@@ -3,6 +3,7 @@
 #include "gbaimp_integration.h"
 #include "dialogue_backlog.h"
 #include "widescreen_adapter.h"
+#include "gbaimp/widescreen.h"
 #include "music_hook.h"
 #include "gbaimp/hd_audio_player.h"
 #include "armv4t/runtime_arm.h"
@@ -395,7 +396,7 @@ static void test_widescreen_view_modes() {
     // Should crop source to authentic central 240x160 (from x=22) and fit to 3:2 layout
     SDL_Rect src{}, dst{};
     int base_w = 0, base_h = 0;
-    khcom_compute_effective_viewport(284, 160, 1920, 1080, &src, &dst, &base_w, &base_h);
+    gbaimp::widescreen_compute_viewport(284, 160, 1920, 1080, &src, &dst, &base_w, &base_h);
     assert(src.x == 22 && src.y == 0 && src.w == 240 && src.h == 160);
     assert(base_w == 240 && base_h == 160);
     // In 1920x1080, 3:2 aspect fit fills height (1080) and width is 1080 * 3 / 2 = 1620
@@ -407,7 +408,7 @@ static void test_widescreen_view_modes() {
     // Should use full 284x160 arena and fit to 16:9 layout
     khcom_set_battle_active(true);
     assert(khcom_is_battle_active());
-    khcom_compute_effective_viewport(284, 160, 1920, 1080, &src, &dst, &base_w, &base_h);
+    gbaimp::widescreen_compute_viewport(284, 160, 1920, 1080, &src, &dst, &base_w, &base_h);
     assert(src.x == 0 && src.y == 0 && src.w == 284 && src.h == 160);
     assert(base_w == 284 && base_h == 160);
     assert(dst.w > 0 && dst.h > 0);
@@ -415,14 +416,14 @@ static void test_widescreen_view_modes() {
 
     // 3. Test Native 3:2 view mode everywhere:
     // Should always be 3:2 regardless of battle state
-    khcom_compute_effective_viewport(240, 160, 1920, 1080, &src, &dst, &base_w, &base_h);
+    gbaimp::widescreen_compute_viewport(240, 160, 1920, 1080, &src, &dst, &base_w, &base_h);
     assert(src.x == 0 && src.y == 0 && src.w == 240 && src.h == 160);
     assert(base_w == 240 && base_h == 160);
     assert(dst.h == 1080 && dst.w == 1620);
 
     // 4. Test integer prescaled texture (e.g. sharp scaler 2x: 568x320)
     khcom_set_battle_active(false);
-    khcom_compute_effective_viewport(568, 320, 1920, 1080, &src, &dst, &base_w, &base_h);
+    gbaimp::widescreen_compute_viewport(568, 320, 1920, 1080, &src, &dst, &base_w, &base_h);
     assert(src.x == 44 && src.y == 0 && src.w == 480 && src.h == 320);
     assert(dst.h == 1080 && dst.w == 1620);
 
@@ -586,14 +587,14 @@ static void test_view_mode_return_to_original() {
     int out = 0;
 
     int el = -1, er = -1;
-    expect(!khcom_widescreen_view_active() && !khcom_widescreen_presentation_active(), "3:2 boot: no widescreen state");
-    khcom_effective_extra_pixels(&el, &er);
+    expect(!gbaimp::Widescreen::instance().view_active() && !gbaimp::Widescreen::instance().presentation_active(), "3:2 boot: no widescreen state");
+    gbaimp::Widescreen::instance().effective_extra_pixels(&el, &er);
     expect(el == 0 && er == 0, "3:2 boot: effective extra pixels are 0/0");
 
     // 2. 3:2 -> 16:9 outside battle: pillarboxed, HUD untouched.
     ws_host_set_view(true);
-    expect(khcom_widescreen_view_active() && !khcom_widescreen_presentation_active(), "16:9 field: view active, not presented");
-    khcom_effective_extra_pixels(&el, &er);
+    expect(gbaimp::Widescreen::instance().view_active() && !gbaimp::Widescreen::instance().presentation_active(), "16:9 field: view active, not presented");
+    gbaimp::Widescreen::instance().effective_extra_pixels(&el, &er);
     expect(el == 0 && er == 0, "16:9 field: effective extra pixels are 0/0 (dialogue/menus stay 240px)");
     expect(g_ws_pillarbox == 1, "16:9 field: margins pillarboxed");
     expect(g_ws_tilemap_provider != nullptr && g_ws_obj_attr_x_provider != nullptr, "16:9 field: providers installed");
@@ -603,8 +604,8 @@ static void test_view_mode_return_to_original() {
     ws_game_mode_switch(kModeBattle);
     expect(khcom_is_battle_active(), "battle flag set");
     expect(g_ws_pillarbox == 0, "16:9 battle: true widescreen (no pillarbox)");
-    expect(khcom_widescreen_presentation_active(), "16:9 battle: presentation active");
-    khcom_effective_extra_pixels(&el, &er);
+    expect(gbaimp::Widescreen::instance().presentation_active(), "16:9 battle: presentation active");
+    gbaimp::Widescreen::instance().effective_extra_pixels(&el, &er);
     expect(el == 22 && er == 22, "16:9 battle: effective extra pixels are 22/22");
     expect(gbaimp::HudAnchoring::instance().settings().mode == gbaimp::HudAnchorMode::WidescreenAnchored &&
            gbaimp::HudAnchoring::instance().settings().horizontal_offset == 22,
@@ -616,15 +617,15 @@ static void test_view_mode_return_to_original() {
     ws_host_set_view(false);
     expect(khcom_is_battle_active(), "battle itself is still running");
     expect_boot("3:2 mid-battle");
-    expect(!khcom_widescreen_view_active() && !khcom_widescreen_presentation_active(), "3:2 mid-battle: no widescreen state");
-    khcom_effective_extra_pixels(&el, &er);
+    expect(!gbaimp::Widescreen::instance().view_active() && !gbaimp::Widescreen::instance().presentation_active(), "3:2 mid-battle: no widescreen state");
+    gbaimp::Widescreen::instance().effective_extra_pixels(&el, &er);
     expect(el == 0 && er == 0, "3:2 mid-battle: effective extra pixels are 0/0");
     expect(ws_hp_gauge_x(&moved) == 20 && !moved, "3:2 mid-battle: HP gauge untouched");
     expect(ws_enemy_hp_x(&moved) == 200 && !moved, "3:2 mid-battle: enemy gauge untouched");
-    expect(khcom_tilemap_provider(2, 0, 0, nullptr) == 0, "3:2 mid-battle: tilemap provider declines");
-    expect(khcom_bg_x_provider(0, 5, 0, &out) == 0, "3:2 mid-battle: bg provider declines");
+    expect(gbaimp::default_tilemap_provider(2, 0, 0, nullptr) == 0, "3:2 mid-battle: tilemap provider declines");
+    expect(gbaimp::default_bg_x_provider(0, 5, 0, &out) == 0, "3:2 mid-battle: bg provider declines");
     SDL_Rect src{}, dst{}; int bw = 0, bh = 0;
-    khcom_compute_effective_viewport(240, 160, 1920, 1080, &src, &dst, &bw, &bh);
+    gbaimp::widescreen_compute_viewport(240, 160, 1920, 1080, &src, &dst, &bw, &bh);
     expect(src.x == 0 && src.w == 240 && src.h == 160 && bw == 240 && dst.w == 1620 && dst.h == 1080,
            "3:2 mid-battle: original 3:2 viewport");
 

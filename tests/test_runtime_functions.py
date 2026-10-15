@@ -241,13 +241,15 @@ def test_widescreen_adapter_hooks():
     with open(cpp_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    assert "khcom_tilemap_provider" in content
-    assert "khcom_bg_x_provider" in content
+    # The game profile delegates policy, providers, viewport and the hook chain to gbaimp::Widescreen.
+    assert "gbaimp::Widescreen" in content
+    assert "gbaimp::default_tilemap_provider" in content
+    assert "gbaimp::default_bg_x_provider" in content
     assert "khcom_obj_attr_x_provider" in content
     assert "khcom_install_widescreen_adapter" in content
     assert "khcom_update_widescreen_state" in content
     assert "khcom_is_battle_active" in content
-    assert "khcom_compute_effective_viewport" in content
+    assert "poll_context" in content and "on_fn_entry" in content
 
     # Test coordinate math simulations:
     extra_left = 22
@@ -307,8 +309,12 @@ def test_hud_anchoring_is_not_a_separate_option():
     assert 'key == "hud_anchoring"' in cfg, "legacy key must still be parsed (ignored)"
     with open(os.path.join(src_dir, "widescreen_adapter.cpp"), "r", encoding="utf-8") as f:
         ws = f.read()
-    assert "HudAnchorMode::WidescreenAnchored" in ws and "settings().mode ==" not in ws,         "anchoring must be derived from the view state, not read from a user setting"
-    assert "khcom_widescreen_presentation_active" in ws
+    assert "settings().mode ==" not in ws, "anchoring must be derived from the view state, not read from a user setting"
+    assert "manage_hud = false" not in ws, "the library must keep deriving the HUD anchoring from the view state"
+    lib_path = os.path.join(os.path.dirname(src_dir), "external", "gba-improvements", "src", "widescreen.cpp")
+    with open(lib_path, "r", encoding="utf-8") as f:
+        lib = f.read()
+    assert "HudAnchorMode::WidescreenAnchored" in lib and "presenting_wide" in lib
     print("[PASS] HUD anchoring is derived from the 16:9 view mode (no separate option, legacy key tolerated)")
 
 def test_audio_dsp_algorithms():

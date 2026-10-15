@@ -3,7 +3,7 @@
 #include "gbaimp/hud_anchoring.h"
 #include "dialogue_backlog.h"
 #include "game_config.h"
-#include "widescreen_adapter.h"
+#include "gbaimp/widescreen.h"
 
 namespace khcom {
 
@@ -13,7 +13,7 @@ void register_gbaimp_integration() {
     h.is_input_blocked = [] {
         return is_runtime_menu_open() || DialogueBacklog::instance().is_open();
     };
-    h.frame_counter = [] { return khcom_get_frame_counter(); };
+    h.frame_counter = [] { return gbaimp::Widescreen::instance().frame_counter(); };
 
     auto& anchoring = gbaimp::HudAnchoring::instance();
     anchoring.clear_zones();

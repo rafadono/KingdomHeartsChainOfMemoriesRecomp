@@ -2,6 +2,7 @@
 
 #include "../dialogue_backlog.h"      // ScopedInternalBusRead
 #include "../widescreen_adapter.h"    // khcom_is_battle_active
+#include "gbaimp/widescreen.h"         // Widescreen::effective_extra_pixels
 #include "battle_text.h"
 #include "fade_sampler.h"
 #include "overlay_fade.h"
@@ -295,7 +296,7 @@ void draw_battle_text();   // defined below (needs apply_fade / make_info)
 // Width (GBA px) of the image presented in s_dst: 240, or 240 + both margins while the 16:9 battle view is shown.
 int presented_image_width() {
     int l = 0, r = 0;
-    khcom_effective_extra_pixels(&l, &r);
+    gbaimp::Widescreen::instance().effective_extra_pixels(&l, &r);
     return 240 + l + r;
 }
 

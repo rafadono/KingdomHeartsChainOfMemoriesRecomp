@@ -9,6 +9,7 @@
 //   * Windows/MSVC: main() calls khcom_install_sdl_interposers(), which patches the Import Address
 //     Table of the executable (and loaded modules) to the same handlers.
 #include "gbaimp/game_host.h"
+#include "gbaimp/widescreen.h"
 #include "capture_harness.h"
 #include "dialogue_backlog.h"
 #include "music_hook.h"
@@ -24,6 +25,9 @@ GBAIMP_DEFINE_LD_WRAPS()
 #endif
 
 namespace {
+
+// Presented-frame counter of the widescreen module (also the clock of gbaimp::hooks().frame_counter).
+void on_present_begin() { gbaimp::Widescreen::instance().notify_present(); }
 
 void on_poll() {
     khcom_update_widescreen_state();
@@ -73,9 +77,9 @@ gbaimp::GameHostConfig make_config() {
     c.on_event = &on_event;
     c.wants_native_frame = &wants_native_frame;
     c.on_native_frame = &on_native_frame;
-    c.compute_viewport = &khcom_compute_effective_viewport;
+    c.compute_viewport = &gbaimp::widescreen_compute_viewport;
     c.after_game_image = &after_game_image;
-    c.on_present_begin = &khcom_widescreen_notify_present;
+    c.on_present_begin = &on_present_begin;
     c.render_present_overlay = &render_present_overlay;
     c.before_present = &before_present;
     c.print_stats = &print_stats;
@@ -90,6 +94,7 @@ gbaimp::GameHostConfig make_config() {
 // registration happens (it also runs from a static initializer, so it does not depend on main()
 // calling it). Returns true when import-table patching is active.
 extern "C" bool khcom_install_sdl_interposers() {
+    khcom_configure_widescreen();   // before the first presented frame, so the frame counter is never reset
     return gbaimp::install_game_host(make_config());
 }
 

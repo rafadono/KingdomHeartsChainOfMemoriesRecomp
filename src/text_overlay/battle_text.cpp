@@ -1,7 +1,7 @@
 #include "battle_text.h"
 
 #include "../dialogue_backlog.h"      // ScopedInternalBusRead
-#include "../widescreen_adapter.h"    // khcom_effective_extra_pixels
+#include "gbaimp/widescreen.h"         // Widescreen::effective_extra_pixels
 #include "armv4t/runtime_arm.h"       // bus_read_*
 #include "gba/gba_ppu.h"
 #include "runtime_bus_bridge.h"        // active_ppu
@@ -376,7 +376,7 @@ void frame_begin(uint64_t ppu_frame, uint16_t dispcnt, const uint8_t* vram, cons
         }
         if (!g_test_override) {   // geometry of the image the PPU is producing now (battle 16:9: 22 px margins around the 240 px picture)
             int l = 0, r = 0;
-            khcom_effective_extra_pixels(&l, &r);
+            gbaimp::Widescreen::instance().effective_extra_pixels(&l, &r);
             g_off_x = l;
             g_image_w = 240 + l + r;
         }
