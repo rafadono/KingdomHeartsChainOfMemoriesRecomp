@@ -1,7 +1,9 @@
 # HD dialogue text overlay - render side
 
 Scope: everything that turns a `PageSnapshot` (what the engine shows, see `src/text_overlay/overlay_types.h`) into
-text drawn at OUTPUT resolution: fonts, layout, glyph rasteriser, atlas and drawing, settings/UI/persistence. The engine side
+text drawn at OUTPUT resolution. The generic part (fonts, layout, glyph rasteriser, atlas and drawing, fades) is the text engine of
+gba-improvements (`gbaimp::text`, see `external/gba-improvements/docs/MODULES.md`, "Text"); this page describes its behaviour as this game uses it.
+The game side is the adapter (`src/text_overlay/text_adapter.{h,cpp}`), the embedded fonts, the settings/UI/persistence. The engine side
 (capturing the page, hiding the engine glyphs) is a separate module; the original text is untouched while the overlay is off
 (`hdtext_enabled=0`, the default). The old in-engine "enhanced text" system has been removed (see "Legacy keys" below).
 
@@ -9,15 +11,14 @@ text drawn at OUTPUT resolution: fonts, layout, glyph rasteriser, atlas and draw
 
 | File | Role |
 |---|---|
-| `src/text_overlay/overlay_fonts.{h,cpp}` | `FontFace` / `FontLibrary`: built-in families, user fonts, metrics, glyph bitmaps (all stb_truetype use), TrueType validator |
-| `src/text_overlay/overlay_fonts_data.{h,cpp}` | generated C arrays of the five extra families (`tools/gen_font_data.py --extra`) |
-| `src/text_overlay/overlay_layout.{h,cpp}` | page layout: tokenising, entry mapping, wrap, auto-fit, vertical placement (pure CPU) |
-| `src/text_overlay/overlay_raster.{h,cpp}` | glyph coverage, shadow and outline bitmaps (pure CPU) |
-| `src/text_overlay/overlay_renderer.cpp` | `OverlayRenderer`, `settings()`, layout cache, SDL atlas and drawing |
-| `src/text_overlay/overlay_synth.h` | synthetic `PageSnapshot`s for tests / the dump tool |
-| `src/game_config.cpp` | UI items `hdtext.*`, callbacks, `[HdText]` persistence, legacy handling |
-| `tests/test_overlay_render.cpp` | unit tests (built into `khcom_unit_tests`) |
-| `tools/overlay_dump.cpp`, `tools/overlay_png_to_ppm.py` | PNG dump tool |
+| `gbaimp/text_fonts.h` (library) | `FontFace` / `FontLibrary`: built-in families (registered by the host), user fonts, metrics, glyph bitmaps (all stb_truetype use), TrueType validator |
+| `gbaimp/text_layout.h`, `text_raster.h`, `text_renderer.h` (library) | page layout (wrap, auto-fit, vertical placement), glyph coverage / shadow / outline bitmaps, layout cache, SDL atlas and drawing |
+| `gbaimp/text_fade.h`, `text_synth.h` (library) | fade maths; synthetic pages for tests and tools |
+| `src/text_overlay/text_adapter.{h,cpp}` | `PageSnapshot` to `TextPage` (the game's word table, colour-code words, glyph entries), the settings object with the game's defaults and colours, registration of the eight embedded fonts |
+| `src/text_overlay/overlay_fonts_data.{h,cpp}`, `src/text_fonts_data.cpp` | generated C arrays of the eight embedded families (`gen_font_data.py` of gba-improvements, see `third_party/fonts/README.md`) |
+| `src/game_config.cpp` | UI items `hdtext.*`, `[HdText]` persistence, legacy handling |
+| `tests/test_text_adapter.cpp` | unit tests of the game side (built into `khcom_unit_tests`); the engine is tested in the library |
+| `tools/overlay_dump.cpp` | PNG dump tool |
 
 ## Algorithm
 
@@ -43,7 +44,7 @@ opacity would need a render target, deliberately avoided for renderer portabilit
 state of the renderer is changed). All glyphs of a frame are made resident BEFORE the first quad is queued; if the atlas is full it
 is flushed/grown at that point, never in the middle of a frame. Texture properties (RGBA, STATIC, not 240/284 x 160 streaming/target)
 make the SDL intercepts in `src/sdl_intercepts.cpp` pass the atlas through untouched. A failed `SDL_RenderCopy` drops the atlas
-and rebuilds it next frame. Call `OverlayRenderer::release_gpu()` before destroying the renderer (a changed renderer pointer is
+and rebuilds it next frame. Call `release_gpu()` of the renderer before destroying the renderer (a changed renderer pointer is
 also detected).
 
 **Layout cache.** One page layout is kept, keyed by a 64-bit hash of (page id, words, glyph rows/colours, origin, wrap, pitch,
@@ -103,7 +104,7 @@ a non-zero `PageGlyph.color` does the same.
 | Minimum Size | `hdtext_min_size` | 30..120 tenths | 50 | auto-fit lower bound |
 
 The menu section is "Dialogue Text (HD)"; the conversation log items stay in "Dialogue & Story". The family list shown in the menu
-is read at start-up (adding a `.ttf` needs a restart; `OverlayRenderer::rescan_fonts()` rescans the folder but the menu list is not refreshed).
+is read at start-up (adding a `.ttf` needs a restart; `TextRenderer::rescan_fonts()` rescans the folder but the menu list is not refreshed).
 
 **Legacy keys.** `text_mode`, `font_family`, `font_size`, `font_density`, `font_scale`, `font_style`, `line_capacity`,
 `soft_word_wrap` (and the matching `dialogue.*` UI keys) still parse without error but are ignored: they do not turn the overlay or
@@ -129,17 +130,14 @@ Monospace (Cousine), Pixel Terminal (VT323), Pixel Arcade (Press Start 2P); all 
 
 ## Tests and the PNG dump
 
-* `./build/khcom_unit_tests` (Linux) / `.\build-vs\Release\khcom_unit_tests.exe` (Windows) run `run_overlay_render_tests`: every family renders
-  every printable ASCII glyph with ink; Keep keeps the engine line structure and never changes the line count; Reflow never breaks
-  or reorders words and everything stays inside the area at scales 3, 4, 5.4, 6.19 and em 6..14; auto-fit shrinks / fails / is
-  bypassed; reveal prefix is a subset of the full page and ink grows monotonically; unsupported words and disabled settings give
-  `can_draw` false; drawing on SDL's software renderer stays inside the box bounds for all styles and wraps; warm draws rasterise nothing,
-  scale / size changes rebuild, `invalidate()` flushes; fades dim; user fonts (valid / truncated / garbage / non-ttf) and a
-  mutation fuzz of the validator.
+* `./build/khcom_unit_tests` (Linux) / `.\build-vs\Release\khcom_unit_tests.exe` (Windows) run `run_text_adapter_tests`: the eight embedded families and their size adjustments, the word table (Windows-1252, pause mark),
+  the conversion of snapshots to pages (entries, colour-code words, undrawn spaces, unsupported words), the game's default settings and
+  colours ("match the game" fallback brown, the warm-yellow highlight, the engine's own highlight). The engine (every family renders
+  every printable ASCII glyph, Keep / Reflow / auto-fit, reveal, caches, fades, user fonts and the validator fuzz) is tested by `text_*` in gba-improvements.
 * PNG dump (no game needed), e.g. in the Docker image or any g++ with SDL2:
-  `g++ -O2 -std=c++17 -o overlay_dump tools/overlay_dump.cpp src/text_overlay/overlay_{fonts,fonts_data,layout,raster,renderer}.cpp src/text_fonts_data.cpp external/gba-improvements/src/capture_harness.cpp -Iexternal/gba-improvements/include $(sdl2-config --cflags --libs)`
+  `g++ -O2 -std=c++17 -o overlay_dump tools/overlay_dump.cpp src/text_overlay/{text_adapter,overlay_fonts_data}.cpp src/text_fonts_data.cpp external/gba-improvements/src/{text_fonts,text_layout,text_raster,text_renderer,capture_harness}.cpp -Isrc -Iexternal/gba-improvements/include $(sdl2-config --cflags --libs)`
   then `SDL_VIDEODRIVER=dummy ./overlay_dump --out out --scales 3,4,5.4,6.19 [--bg frame.ppm --bg-x 22] [--fonts dir]`.
-  `--bg` takes a P6 PPM of a game frame (`python tools/overlay_png_to_ppm.py frame.png frame.ppm`; `--bg-x 22` for 284x160 captures);
+  `--bg` takes a P6 PPM of a game frame (`python external/gba-improvements/tools/png_to_ppm.py frame.png frame.ppm`; `--bg-x 22` for 284x160 captures);
   the engine's own text area is painted over with the box colour. Output per scale: `families_<s>x.png` (every family, em 10),
   `sizes_<s>x.png` (em 6..14, Reflow, auto-fit), `styles_<s>x.png` (plain/shadow/outline x keep/reflow), `pages_<s>x.png` (typewriter reveal).
 
@@ -152,7 +150,7 @@ family list of the menu is fixed at start-up; the interaction with the engine (h
 ## Fades and colours (render side)
 
 * `DrawInfo::global_alpha` carries alpha-type fades; brightness fades (`fade_mode` 2 / 3, `fade_level` t) pull the text, shadow, outline
-  and highlight colours towards white (`c + (255 - c) * t`) or black (`c * (1 - t)`) with `fade_rgb()` (`overlay_fade.h`); glyph
+  and highlight colours towards white (`c + (255 - c) * t`) or black (`c * (1 - t)`) with `fade_rgb()` (`gbaimp/text_fade.h`); glyph
   coverage stays the alpha, so edges blend with the already faded scene. Tests: darken 0.5 dims, darken 1.0 is black, brighten 1.0 of
   a dark text is white.
 * **Colour defaults.** The engine draws dark brown (99,33,0) with a tan shadow (208,152,56) on its orange box. Measured on
@@ -189,4 +187,4 @@ config file), used by the font matrix.
 * Colour-code words use `PageSnapshot::engine_highlight_rgba` (the engine's own colour, e.g. cyan) when given, else the fixed warm yellow; a
   palette-derived fade is not applied twice to it.
 * `DrawInfo::gba_w` may be 284 (16:9 battle image); snapshot x already includes the margin offset.
-* Tests: `test_battle_additions` in `tests/test_overlay_render.cpp`.
+* Tests: the layout of indented battle pages is covered by `text_layout` in gba-improvements; the highlight colours by `tests/test_text_adapter.cpp`.

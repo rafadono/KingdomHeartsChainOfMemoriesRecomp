@@ -1,7 +1,7 @@
 #pragma once
 // Samples the PPU blend registers per scanline (host-side presentation observer; gbarecomp is not modified) so the
 // overlay can follow the screen fades of the PRESENTED frame. See docs/TEXT_OVERLAY_ENGINE.md "Screen fades".
-#include "overlay_fade.h"
+#include "overlay_types.h"   // FadeState, kPpuBlendsNormalObj
 
 #include <cstdint>
 

@@ -65,8 +65,8 @@ Settings: `overlay::settings()` (`hdtext_*`). Engine side `text_overlay/engine_h
 enabled): captures the dialogue window state once per frame into a `PageSnapshot` (`overlay_types.h`), evaluates a stand-down predicate, and when the overlay owns the
 text makes the engine's glyph draw submit nothing. In-battle dialogue boxes use a dedicated observer path (`src/text_overlay/battle_text.{h,cpp}`): a PPU presentation observer
 decodes OAM glyph sprites, disables their rendering for the matched frame, and commits the snapshot at frame latch. At `RenderCopy` it hands the snapshot of the presented frame (2-frame pairing lag for cutscenes, frame-latched for battle) to the render side:
-`overlay_layout` (wrap, auto-fit, placement), `overlay_raster` + `overlay_fonts` (stb_truetype glyphs, shadow/outline), `overlay_renderer` (atlas, drawing),
-`fade_sampler` + `overlay_fade.h` (follows palette fades). Details: [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md), [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md).
+`text_adapter` turns it into a `gbaimp::text::TextPage` and calls the library's `TextRenderer` (layout: wrap, auto-fit, placement; stb_truetype glyphs, shadow/outline; atlas and drawing),
+`fade_sampler` + `gbaimp/text_fade.h` (follows palette fades). Details: [TEXT_OVERLAY_ENGINE.md](TEXT_OVERLAY_ENGINE.md), [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md).
 
 
 ### Audio
@@ -82,6 +82,6 @@ Legacy keys of removed features (`hud_anchoring`, `text_mode`, `font_*`, `line_c
 
 ## Tests and tools
 
-`tests/test_all_modules.cpp` (+ `test_overlay_render.cpp`, `test_overlay_engine.cpp`) build into `khcom_unit_tests` (it links the real `game_config.cpp`, so the registry, the menu rows and the `khcom_config.ini` round trip are tested); `tests/test_runtime_functions.py` checks the schema/algorithms;
+`tests/test_all_modules.cpp` (+ `test_text_adapter.cpp`, `test_overlay_engine.cpp`) build into `khcom_unit_tests` (it links the real `game_config.cpp`, so the registry, the menu rows and the `khcom_config.ini` round trip are tested); `tests/test_runtime_functions.py` checks the schema/algorithms;
 `tests/verify_mp2k_audio.py` and `tests/benchmark_performance.py` are manual scripts that start the executable. Tools: `tools/capture/` (harness runners), `tools/overlay_dump.cpp`,
-`tools/gen_font_data.py`, `tools/update_symbols.py`, `tools/import_decomp_symbols.py`, `tools/dialogue_text_tool.py` (offline dialogue-table extraction / re-wrap / compile to a binary blob; not used at run time).
+`tools/dialogue_text_tool.py` (offline dialogue-table extraction / re-wrap / compile to a binary blob; not used at run time).

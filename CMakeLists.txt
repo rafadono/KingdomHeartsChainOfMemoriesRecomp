@@ -80,11 +80,8 @@ set(KHCOM_RUNTIME_SOURCES
     src/runtime_ui_standard.cpp
     src/dialogue_backlog.cpp
     src/text_fonts_data.cpp
-    src/text_overlay/overlay_fonts.cpp
     src/text_overlay/overlay_fonts_data.cpp
-    src/text_overlay/overlay_layout.cpp
-    src/text_overlay/overlay_raster.cpp
-    src/text_overlay/overlay_renderer.cpp
+    src/text_overlay/text_adapter.cpp
     src/ram_overlay_dispatch.cpp
     src/widescreen_adapter.cpp
     src/text_overlay/engine_hooks.cpp
@@ -191,18 +188,15 @@ endif()
 # Native C++ Unit Test Runner Target
 add_executable(khcom_unit_tests
     tests/test_all_modules.cpp
-    tests/test_overlay_render.cpp
+    tests/test_text_adapter.cpp
     tests/test_overlay_engine.cpp
     src/gbaimp_integration.cpp
     src/sdl_intercepts.cpp
     src/runtime_ui_standard.cpp
     src/dialogue_backlog.cpp
     src/text_fonts_data.cpp
-    src/text_overlay/overlay_fonts.cpp
     src/text_overlay/overlay_fonts_data.cpp
-    src/text_overlay/overlay_layout.cpp
-    src/text_overlay/overlay_raster.cpp
-    src/text_overlay/overlay_renderer.cpp
+    src/text_overlay/text_adapter.cpp
     src/widescreen_adapter.cpp
     src/text_overlay/engine_hooks.cpp
     src/text_overlay/battle_text.cpp

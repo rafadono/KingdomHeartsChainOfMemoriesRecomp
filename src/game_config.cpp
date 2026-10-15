@@ -2,7 +2,7 @@
 #include "gbaimp_integration.h"
 #include "gbaimp/host_settings.h"
 #include "gbaimp/input_enhancements.h"
-#include "text_overlay/overlay_types.h"
+#include "text_overlay/text_adapter.h"
 #include "dialogue_backlog.h"
 #include "widescreen_adapter.h"
 #include "gbaimp/capture_harness.h"
@@ -179,8 +179,8 @@ const char* const kPerfThemeChoices[] = {
 };
 
 
-// Family names are filled in at start-up from OverlayRenderer::family_names() (built-ins, then fonts/*.ttf).
-constexpr std::size_t kMaxFontChoices = 8 + 8;   // built-in families + user fonts (FontLibrary::kMaxUserFonts)
+// Family names are filled in at start-up from the text renderer's family_names() (built-ins, then fonts/*.ttf).
+constexpr std::size_t kMaxFontChoices = 8 + 8;   // built-in families + user fonts (gbaimp::text::FontLibrary::kMaxUserFonts)
 
 // ---- HD dialogue text (text_overlay) settings <-> integer UI values ---------------------------------
 template <size_t N>
@@ -194,7 +194,7 @@ int tenths(float v) { return static_cast<int>(std::lround(v * 10.0f)); }
 // Returns 1 when `key` is a hdtext.* key (value written to *out), 0 otherwise.
 int hdtext_get(const char* key, int* out) {
     if (std::strncmp(key, "hdtext.", 7) != 0) return 0;
-    const overlay::OverlaySettings& o = overlay::settings();
+    const overlay::TextSettings& o = overlay::settings();
     const char* k = key + 7;
     if (!std::strcmp(k, "enabled")) *out = o.enabled ? 1 : 0;
     else if (!std::strcmp(k, "family")) *out = o.family;
@@ -220,18 +220,18 @@ int hdtext_get(const char* key, int* out) {
 // keyed by the settings, so no explicit invalidation is needed (changes apply live).
 int hdtext_set(const char* key, int v) {
     if (std::strncmp(key, "hdtext.", 7) != 0) return 0;
-    overlay::OverlaySettings& o = overlay::settings();
+    overlay::TextSettings& o = overlay::settings();
     const char* k = key + 7;
     const float f = static_cast<float>(v);
     if (!std::strcmp(k, "enabled")) o.enabled = v != 0;
     else if (!std::strcmp(k, "family")) {
-        const int n = static_cast<int>(overlay::OverlayRenderer::instance().family_names().size());
+        const int n = static_cast<int>(overlay::renderer().family_names().size());
         o.family = std::clamp(v, 0, std::max(0, n - 1));
     }
     else if (!std::strcmp(k, "size")) o.size_em = std::clamp(f, 30.0f, 200.0f) / 10.0f;
     else if (!std::strcmp(k, "line_spacing")) o.line_spacing = std::clamp(f, 80.0f, 200.0f) / 100.0f;
     else if (!std::strcmp(k, "letter_spacing")) o.letter_spacing = std::clamp(f, -10.0f, 30.0f) / 10.0f;
-    else if (!std::strcmp(k, "wrap")) o.wrap = v ? overlay::WrapMode::Reflow : overlay::WrapMode::KeepEngineBreaks;
+    else if (!std::strcmp(k, "wrap")) o.wrap = v ? overlay::WrapMode::Reflow : overlay::WrapMode::KeepSourceBreaks;
     else if (!std::strcmp(k, "style")) o.style = static_cast<overlay::TextStyle>(std::clamp(v, 0, 2));
     else if (!std::strcmp(k, "shadow_offset")) o.shadow_offset = std::clamp(f, 2.0f, 30.0f) / 10.0f;
     else if (!std::strcmp(k, "outline_width")) o.outline_width = std::clamp(f, 2.0f, 30.0f) / 10.0f;
@@ -394,7 +394,7 @@ std::vector<std::string> to_vec(const char* const* a, std::size_t n) {
 
 // Fills the dynamic family list of the "hdtext.family" menu item (built-in + fonts/ folder).
 void init_font_choices() {
-    g_font_choice_names = overlay::OverlayRenderer::instance().family_names();
+    g_font_choice_names = overlay::renderer().family_names();
     if (g_font_choice_names.size() > kMaxFontChoices) g_font_choice_names.resize(kMaxFontChoices);
 }
 
@@ -487,7 +487,7 @@ void build_registry(SettingsRegistry& reg) {
     gbaimp::IniExtension font;
     font.section = "HdText";
     font.write = [](std::ostream& o) {
-        const std::vector<std::string> fams = overlay::OverlayRenderer::instance().family_names();
+        const std::vector<std::string> fams = overlay::renderer().family_names();
         const int fi = overlay::settings().family;
         if (fi >= 0 && fi < static_cast<int>(fams.size())) o << "hdtext_font=" << fams[fi] << "\n";
     };
@@ -495,7 +495,7 @@ void build_registry(SettingsRegistry& reg) {
         if (key != "hdtext_font") return false;
         std::string name = raw;
         while (!name.empty() && (name.back() == '\r' || name.back() == ' ')) name.pop_back();
-        const int idx = overlay::OverlayRenderer::instance().family_index(name);
+        const int idx = overlay::renderer().family_index(name);
         if (idx >= 0) overlay::settings().family = idx;
         return true;
     };

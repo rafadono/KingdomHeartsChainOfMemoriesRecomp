@@ -1,7 +1,7 @@
 # Dialogue text overlay - ENGINE side (capture, stand-down, hide, present wiring)
 
 Code: `src/text_overlay/engine_hooks.{h,cpp}` (this side), contract `src/text_overlay/overlay_types.h`,
-render side `src/text_overlay/overlay_renderer.cpp` (see [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md)),
+render side `gbaimp::text` of gba-improvements through `src/text_overlay/text_adapter.cpp` (see [TEXT_OVERLAY_RENDER.md](TEXT_OVERLAY_RENDER.md)),
 tests `tests/test_overlay_engine.cpp`. (The original design/analysis notes are not part of the repository.) Confidence tags: H =
 verified in a real run/capture, M = consistent but not directly observed.
 
@@ -26,7 +26,7 @@ verified in a real run/capture, M = consistent but not directly observed.
    {0x20..0xFF, 0x0A, 0xE000, 0x4079, 0x4000}; `total == drawable words == pool count byte`, `revealed <= total`; every pool
    entry in use and its glyph (ROM source pointer of the tile allocation -> `(src-0x090CBFB2)/128`) equals the word's glyph
    (spaces: no tile); layout origin == first pool entry == one of the 4 placements (x in {16,72}, y in {12,108}); and finally
-   `OverlayRenderer::can_draw()` (render side may refuse: fonts, fit). Otherwise the engine draws normally. Reasons are
+   `can_draw_page()` (`TextRenderer::can_draw()`) (render side may refuse: fonts, fit). Otherwise the engine draws normally. Reasons are
    counted in `engine::stats()` and logged (below). Discontinuities: if the PPU frame counter (restored by a savestate load)
    stops advancing in step with the vblank counter (not restored) or the vblank counter regresses, all captured state is
    dropped.
@@ -38,7 +38,7 @@ verified in a real run/capture, M = consistent but not directly observed.
    852x480, frames 8985/9000/9110) are byte-identical between the pre-change build and this build (H).
 4. **Present** (`khcom_render_copy_intercept` in `src/sdl_intercepts.cpp`, right after the game image copy and the screen mask, so the settings menu that gbarecomp draws afterwards stays above the text; the perf HUD and backlog are drawn later at present): `engine::on_present(renderer, dst)` takes the snapshot of tag
    `V - lag` (V = `g_runtime_vblank_starts`), **lag = 2** (calibrated, below), and calls
-   `OverlayRenderer::draw(snapshot, settings(), DrawInfo{renderer, dst of the game image})`.
+   `draw_page(snapshot, DrawInfo{renderer, dst of the game image})` (`TextRenderer::draw()`).
    `global_alpha` is left at 1 (fade: see open items).
 
 ## Calibration findings
@@ -71,7 +71,7 @@ Box fields `box_x/y/w/h` are filled for bottom placements only. Nothing renamed 
 Fade additions: `PageSnapshot::fade_mode` (0 none, 1 alpha, 2 brighten, 3 darken; `PageSnapshot::fade` = strength 0..1),
 `DrawInfo::fade_mode`, `DrawInfo::fade_level`, `DrawInfo::fade_from_palette` (the render side tints its colours, alpha-blend
 fades use `global_alpha = 1 - fade`), `OverlaySettings::text_rgba == 0` / `shadow_rgba == 0` = "match the game's own colour".
-New files: `overlay_fade.h` (pure maths + `kPpuBlendsNormalObj`), `fade_sampler.{h,cpp}` (per-scanline BLDCNT/BLDALPHA/BLDY table).
+New files: `gbaimp/text_fade.h` (pure maths + `kPpuBlendsNormalObj`, now in the library), `fade_sampler.{h,cpp}` (per-scanline BLDCNT/BLDALPHA/BLDY table).
 
 ## Screen fades
 
@@ -92,7 +92,7 @@ and BLDY on dialogue frames shows that the box and scene fade, but engine glyphs
 Cause: gbarecomp's compositor marks an OBJ pixel as a BLDCNT first target only for semi-transparent OBJ (`gba_ppu.cpp`:
 `t1 = blend_enabled(ux) && obj_mode == 1`); BLDCNT bit 4 is ignored for normal OBJ (a difference from hardware; gbarecomp is not edited
 here). So with the bundled gbarecomp the register path cannot fade the text and the overlay must not either:
-`kPpuBlendsNormalObj = false` (`overlay_fade.h`) makes `fade_from_regs()` inert and the per-scanline observer
+`kPpuBlendsNormalObj = false` (`gbaimp/text_fade.h`) makes `fade_from_regs()` inert and the per-scanline observer
 (`fade_sampler.cpp`, installed with `GbaPpu::set_presentation_observer`, host side only) is not attached by the overlay.
 The mapping (mode 2 brighten `c + (255 - c) * t`, mode 3 darken `c * (1 - t)`, t = BLDY/16; alpha: text alpha EVA/16, only when OBJ is a
 first target) and its unit tests stay, and flipping the constant switches it on if the PPU is ever corrected. The observer's `scanline()`
@@ -100,7 +100,7 @@ sees the registers each line is rendered with and `frame_ready()` publishes the 
 
 **What the overlay follows: palette fades.** The engine fades the text's own OBJ palette (bank 0, entries 1 body / 2 shadow),
 sampled every frame into `engine_text_rgba` / `engine_shadow_rgba` at engine time and paired with the presented frame through the
-same 2-frame lag as the page. `apply_fade()` (called by `on_present` right before `OverlayRenderer::draw`) compares those colours with
+same 2-frame lag as the page. `apply_fade()` (called by `on_present` right before `draw_page`) compares those colours with
 the ones the page started with (`fade_from_text_colours`): all channels down -> Darken with `t = 1 - sum(cur)/sum(ref)`, all up ->
 Brighten with `t = (sum(cur) - sum(ref)) / (765 - sum(ref))`; body and shadow must agree within 0.2 and the reference must be known,
 otherwise no fade (colour-code words or another box palette are not fades). The renderer applies the equivalent tint to text / shadow /

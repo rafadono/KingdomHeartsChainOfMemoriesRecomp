@@ -29,7 +29,7 @@
 
 using namespace khcom;
 
-int run_overlay_render_tests(const char* png_dir, bool verbose);
+int run_text_adapter_tests(bool verbose);
 int run_overlay_engine_tests(bool verbose);
 
 // Widescreen globals defined by gbarecomp (C linkage; must be declared at file scope so
@@ -862,10 +862,10 @@ int main() {
     ++modules_run; test_widescreen_view_modes();
     ++modules_run; test_view_mode_return_to_original();
     ++modules_run; test_capture_harness();
-    assert(run_overlay_render_tests(nullptr, false) == 0);
+    assert(run_text_adapter_tests(false) == 0);
     assert(run_overlay_engine_tests(false) == 0);
     ++modules_run;
-    std::cout << "[PASS] HD dialogue text overlay: fonts, layout, fit, reveal, caches, drawing (tests/test_overlay_render.cpp)" << std::endl;
+    std::cout << "[PASS] HD dialogue text: embedded fonts, word/page conversion, game colours and settings (tests/test_text_adapter.cpp)" << std::endl;
     ++modules_run; test_config_ini_roundtrip();
 
     std::cout << "================================================================" << std::endl;

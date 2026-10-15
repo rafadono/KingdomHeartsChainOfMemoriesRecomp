@@ -3,15 +3,15 @@
 //   overlay_dump --out <dir> [--scales 3,4,5.4,6.19] [--bg frame.ppm] [--bg-x 22] [--fonts <dir>]
 //                [--sheets families,sizes,styles,pages]
 //
-// Draws synthetic pages with the real OverlayRenderer on an SDL software renderer (offscreen surface) at several
+// Draws synthetic pages with the real text engine (gbaimp::text, through src/text_overlay/text_adapter.cpp) on an SDL software renderer (offscreen surface) at several
 // output scales, families and sizes and writes PNG sheets (rows stacked, 6 px black separator, order printed on
-// stdout). `--bg` is a binary PPM (P6) of the game frame (see tools/overlay_png_to_ppm.py); `--bg-x` is the x offset of
+// stdout). `--bg` is a binary PPM (P6) of the game frame (see external/gba-improvements/tools/png_to_ppm.py); `--bg-x` is the x offset of
 // the 240x160 game image inside it (22 for the 284x160 widescreen captures). The engine's own text area in the
 // background is painted over with the colour of the box to the right of it.
 #include "gbaimp/capture_harness.h"
-#include "../src/text_overlay/overlay_fonts.h"
-#include "../src/text_overlay/overlay_synth.h"
-#include "../src/text_overlay/overlay_types.h"
+#include "gbaimp/text_fonts.h"
+#include "gbaimp/text_synth.h"
+#include "../src/text_overlay/text_adapter.h"
 
 #include <SDL.h>
 
@@ -23,6 +23,32 @@
 #include <vector>
 
 using namespace khcom::overlay;
+
+// A snapshot the way the engine side reports a page: one word per character, glyph entries on a regular grid.
+PageSnapshot synth_page(const std::vector<std::string>& lines, float origin_x = 72.0f, float origin_y = 108.0f) {
+    const gbaimp::text::TextPage t = gbaimp::text::synth_page(lines, origin_x, origin_y, true);
+    PageSnapshot p;
+    p.valid = true;
+    p.page_id = 1;
+    p.origin_x = origin_x;
+    p.origin_y = origin_y;
+    p.wrap_px = 155;
+    p.line_pitch = 12;
+    p.max_lines = 3;
+    for (const gbaimp::text::TextChar& c : t.chars) {
+        p.text.push_back(static_cast<uint16_t>(c.cp));
+        if (c.has_pos) {
+            PageGlyph g;
+            g.word = static_cast<uint16_t>(c.cp);
+            g.gx = c.gx;
+            g.gy = c.gy;
+            p.glyphs.push_back(g);
+        }
+    }
+    p.revealed = static_cast<int>(p.glyphs.size());
+    p.page_complete = true;
+    return p;
+}
 
 namespace {
 
@@ -85,7 +111,7 @@ struct Sheet {
 };
 
 // Renders one page at `scale` and returns the crop around the dialogue box.
-bool render_cell(const std::vector<uint8_t>& game, float scale, const OverlaySettings& st, const PageSnapshot& page, Image& out,
+bool render_cell(const std::vector<uint8_t>& game, float scale, const TextSettings& st, const PageSnapshot& page, Image& out,
                  int off_x, int off_y, float* em_used = nullptr) {
     const int dw = static_cast<int>(240 * scale), dh = static_cast<int>(160 * scale);
     const int W = dw + 2 * off_x, H = dh + 2 * off_y;
@@ -103,8 +129,8 @@ bool render_cell(const std::vector<uint8_t>& game, float scale, const OverlaySet
     DrawInfo info;
     info.renderer = ren;
     info.dst_x = off_x; info.dst_y = off_y; info.dst_w = dw; info.dst_h = dh;
-    OverlayRenderer& r = OverlayRenderer::instance();
-    const bool drawn = r.draw(page, st, info);
+    gbaimp::text::TextRenderer& r = renderer();
+    const bool drawn = r.draw(to_text_page(page), st, info);
     (void)em_used;
     SDL_Rect crop{off_x + static_cast<int>(56 * scale), off_y + static_cast<int>(100 * scale), static_cast<int>(184 * scale), static_cast<int>(52 * scale)};
     out.w = crop.w; out.h = crop.h;
@@ -159,7 +185,7 @@ int main(int argc, char** argv) {
     }
     SDL_setenv("SDL_VIDEODRIVER", "dummy", 0);
     if (!fonts_dir.empty()) {
-        FontLibrary::instance().set_user_font_dir(fonts_dir);
+        gbaimp::text::FontLibrary::instance().set_user_font_dir(fonts_dir);
     }
     Bg bg;
     const bool have_bg = !bg_path.empty() && read_ppm(bg_path, bg);
@@ -167,7 +193,7 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> game;
     make_game_image(have_bg ? &bg : nullptr, bg_x, game);
 
-    OverlayRenderer& r = OverlayRenderer::instance();
+    gbaimp::text::TextRenderer& r = renderer();
     const std::vector<std::string> fams = r.family_names();
     const PageSnapshot p1 = synth_page({"One look at this castle, and I", "just knew! They're here."});
     const PageSnapshot p3 = synth_page({"I've been looking for you,", "Sora. The door to this place", "has been sealed for so long..."});
@@ -175,13 +201,13 @@ int main(int argc, char** argv) {
 
     for (float scale : scales) {
         const std::string tag = fmt_scale(scale);
-        OverlaySettings base;
+        TextSettings base = settings();   // the game's defaults
         base.enabled = true;
         base.outline_width = 0.8f;
         if (sheets.find("families") != std::string::npos) {
             Sheet sh;
             for (size_t f = 0; f < fams.size(); ++f) {
-                OverlaySettings st = base;
+                TextSettings st = base;
                 st.family = static_cast<int>(f);
                 Image im;
                 render_cell(game, scale, st, p1, im, 3, 5);
@@ -193,7 +219,7 @@ int main(int argc, char** argv) {
         if (sheets.find("sizes") != std::string::npos) {
             Sheet sh;
             for (float em : {6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f}) {
-                OverlaySettings st = base;
+                TextSettings st = base;
                 st.size_em = em;
                 st.wrap = WrapMode::Reflow;
                 Image im;
@@ -208,7 +234,7 @@ int main(int argc, char** argv) {
             const char* names[] = {"plain", "shadow", "outline"};
             for (int sty = 0; sty < 3; ++sty)
                 for (int wr = 0; wr < 2; ++wr) {
-                    OverlaySettings st = base;
+                    TextSettings st = base;
                     st.style = static_cast<TextStyle>(sty);
                     st.wrap = static_cast<WrapMode>(wr);
                     st.text_rgba = sty == 0 ? 0x202020FFu : 0xFFFFFFFFu;
@@ -224,13 +250,13 @@ int main(int argc, char** argv) {
             for (int rev : {0, 12, 40, 1000}) {
                 PageSnapshot pg = p1;
                 pg.revealed = rev == 1000 ? static_cast<int>(pg.glyphs.size()) : rev;
-                OverlaySettings st = base;
+                TextSettings st = base;
                 Image im;
                 render_cell(game, scale, st, pg, im, 3, 5);
                 sh.add(im);
                 std::printf("  pages_%s row typewriter reveal %d\n", tag.c_str(), pg.revealed);
             }
-            OverlaySettings st = base;
+            TextSettings st = base;
             st.wrap = WrapMode::Reflow;
             Image im;
             render_cell(game, scale, st, p1r, im, 3, 5);

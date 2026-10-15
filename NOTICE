@@ -31,7 +31,7 @@ Embedded in the executable (HD dialogue text overlay)
   third_party/fonts/OFL-Atkinson.txt, OFL-VarelaRound.txt, OFL-Cousine.txt, OFL-VT323.txt, OFL-PressStart2P.txt.
   Sources, hashes and subsetting: third_party/fonts/README.md.
 
-* stb_truetype.h v1.26 (third_party/stb/stb_truetype.h)
+* stb_truetype.h v1.26 (external/gba-improvements/third_party/stb/stb_truetype.h)
   Public domain (Sean Barrett / RAD Game Tools). Dual licensed MIT / public domain per the header.
 
 Data and symbol sources

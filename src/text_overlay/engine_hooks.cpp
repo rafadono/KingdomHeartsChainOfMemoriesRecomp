@@ -5,7 +5,7 @@
 #include "gbaimp/widescreen.h"         // Widescreen::effective_extra_pixels
 #include "battle_text.h"
 #include "fade_sampler.h"
-#include "overlay_fade.h"
+#include "text_adapter.h"
 #include "armv4t/runtime_arm.h"       // g_cpu, bus_read_*
 #include "gba/gba_ppu.h"
 #include "runtime_bus_bridge.h"        // active_ppu
@@ -270,7 +270,7 @@ void apply_fade(PageSnapshot& snap, DrawInfo& di) {
         ref_shadow = snap.engine_shadow_rgba;
     }
     FadeState f;
-    if (kPpuBlendsNormalObj) {   // inert on the bundled PPU (see overlay_fade.h), so no per-scanline observer is installed
+    if (kPpuBlendsNormalObj) {   // inert on the bundled PPU (see gbaimp/text_fade.h), so no per-scanline observer is installed
         fade_sampler_attach();
         FrameBlend fb;
         if (fade_sampler_last_frame(&fb)) f = fb.state_at(static_cast<int>(snap.origin_y) + 14);
@@ -312,11 +312,11 @@ DrawInfo make_info() {
 }
 
 bool battle_can_draw_cb(const PageSnapshot& snap) {
-    return s_renderer != nullptr && s_dst.w > 0 && OverlayRenderer::instance().can_draw(snap, settings(), make_info());
+    return s_renderer != nullptr && s_dst.w > 0 && can_draw_page(snap, make_info());
 }
 
 bool can_draw_cb(const PageSnapshot& snap, void*) {
-    return OverlayRenderer::instance().can_draw(snap, settings(), make_info());
+    return can_draw_page(snap, make_info());
 }
 
 std::string text_of(const std::vector<uint16_t>& words) {
@@ -706,7 +706,7 @@ void draw_battle_text() {
         return;
     }
     apply_fade(snap, di);
-    if (OverlayRenderer::instance().draw(snap, settings(), di)) ++s_stats.presents_drawn;
+    if (draw_page(snap, di)) ++s_stats.presents_drawn;
     else ++s_stats.presents_missing;
 }
 }  // namespace
@@ -780,7 +780,7 @@ void on_present(SDL_Renderer* renderer, const SDL_Rect& game_dst) {
     PageSnapshot snap = slot.snap;
     snap.frame = want;
     apply_fade(snap, di);
-    if (OverlayRenderer::instance().draw(snap, settings(), di)) ++s_stats.presents_drawn;
+    if (draw_page(snap, di)) ++s_stats.presents_drawn;
     else ++s_stats.presents_missing;
     if (s_log && s_log_lines <= 400000) {
         ++s_log_lines;

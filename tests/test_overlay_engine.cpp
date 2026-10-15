@@ -7,6 +7,7 @@
 #include "text_overlay/battle_text.h"
 #include "text_overlay/engine_hooks.h"
 #include "text_overlay/fade_sampler.h"
+#include "text_overlay/text_adapter.h"
 
 #include "widescreen_adapter.h"
 #include "armv4t/runtime_arm.h"
@@ -273,13 +274,13 @@ void test_hook_flow_and_inertness() {
     build_world(page_words(), 4, 0);
     eng::set_viewport_for_tests(reinterpret_cast<SDL_Renderer*>(0x10), dst);
     const uint64_t w0 = eng::stats().windows, h0 = eng::stats().hidden;
-    const uint64_t d0 = OverlayRenderer::instance().draws();   // the global counter may already be non-zero
+    const uint64_t d0 = renderer().draws();   // the global counter may already be non-zero
     hook_layout(kW, kStart, 72, 12);
     hook_update(kW);
     assert(hook_draw(kW, 4) == 4);
     assert(eng::stats().windows == w0 && eng::stats().hidden == h0);
     eng::on_present(reinterpret_cast<SDL_Renderer*>(0x10), dst);   // must not draw (nor touch the fake renderer)
-    assert(OverlayRenderer::instance().draws() == d0);
+    assert(renderer().draws() == d0);
 
     // ---- overlay ON: hook chained, decision made once, draw count zeroed ----
     settings().enabled = true;
@@ -408,48 +409,11 @@ void test_hook_flow_and_inertness() {
 
 // ---- screen fades -----------------------------------------------------------------------------------
 void test_fades() {
-    // BLDCNT effect 2 / 3 with the OBJ layer (bit 4) as first target; BLDY clamps at 16
-    FadeState f = fade_from_regs(0x0090, 0, 8, true);   // effect 2, OBJ
-    assert(f.mode == FadeMode::Brighten && f.level == 0.5f);
-    f = fade_from_regs(0x00D0, 0, 16, true);            // effect 3
-    assert(f.mode == FadeMode::Darken && f.level == 1.0f);
-    f = fade_from_regs(0x00D0, 0, 31, true);
-    assert(f.mode == FadeMode::Darken && f.level == 1.0f);   // clamped like the PPU
-    assert(fade_from_regs(0x00D0, 0, 0, true).mode == FadeMode::None);
-    assert(fade_from_regs(0x00CF, 0, 16, true).mode == FadeMode::None);   // BG-only first targets: the text OBJ is not faded
-    assert(fade_from_regs(0x0010, 0, 16, true).mode == FadeMode::None);   // effect 0
-    f = fade_from_regs(0x0050, 0x0808, 0, true);   // alpha, OBJ first target, EVA 8
-    assert(f.mode == FadeMode::Alpha && f.level == 0.5f);
-    assert(fade_from_regs(0x0050, 0x0010, 0, true).mode == FadeMode::None);   // EVA 16: opaque
-    assert(fade_from_regs(0x0F40, 0x0A06, 0, true).mode == FadeMode::None);   // the observed box/figure fades: OBJ not first target
-
-    // the bundled PPU ignores BLDCNT for normal OBJ (the dialogue glyphs): the default mapping is inert
+    // The fade maths (BLDCNT / BLDALPHA / BLDY decoding, colour fades) is gbaimp::text (tested in gba-improvements); the
+    // bundled PPU ignores BLDCNT for normal OBJ (the dialogue glyphs), so the default mapping is inert here.
+    FadeState f;
     assert(!kPpuBlendsNormalObj);
     assert(fade_from_regs(0x00D0, 0, 16).mode == FadeMode::None && fade_from_regs(0x0090, 0, 8).mode == FadeMode::None);
-
-    // colours
-    assert(fade_rgb(0x102030u, FadeMode::Darken, 1.0f) == 0u);
-    assert(fade_rgb(0x102030u, FadeMode::Brighten, 1.0f) == 0xFFFFFFu);
-    assert(fade_rgb(0xFF8000u, FadeMode::Darken, 0.5f) == 0x804000u);
-    assert(fade_rgb(0x000000u, FadeMode::Brighten, 0.5f) == 0x808080u);
-    assert(fade_rgb(0x123456u, FadeMode::None, 0.7f) == 0x123456u);
-    assert(fade_rgb(0x123456u, FadeMode::Alpha, 0.7f) == 0x123456u);
-
-    // palette fades seen through the engine text colours
-    const uint32_t body = 0x632100FFu, shadow = 0xD09838FFu;   // (99,33,0) / (208,152,56): the engine's own colours
-    assert(fade_from_text_colours(body, shadow, body, shadow).mode == FadeMode::None);
-    auto scale = [](uint32_t c, float k) {
-        auto ch = [&](int s) { return static_cast<uint32_t>(((c >> s) & 0xFF) * k + 0.5f) << s; };
-        return ch(24) | ch(16) | ch(8) | 0xFFu;
-    };
-    f = fade_from_text_colours(body, shadow, scale(body, 0.5f), scale(shadow, 0.5f));
-    assert(f.mode == FadeMode::Darken && std::fabs(f.level - 0.5f) < 0.06f);
-    f = fade_from_text_colours(body, shadow, 0x000000FFu, 0x000000FFu);
-    assert(f.mode == FadeMode::Darken && f.level > 0.95f);
-    f = fade_from_text_colours(body, shadow, 0xFFFFFFFFu, 0xFFFFFFFFu);
-    assert(f.mode == FadeMode::Brighten && f.level > 0.95f);
-    assert(fade_from_text_colours(body, shadow, 0xFFFFFFFFu, scale(shadow, 0.5f)).mode == FadeMode::None);   // inconsistent
-    assert(fade_from_text_colours(0, 0, body, shadow).mode == FadeMode::None);                               // unknown reference
 
     // per-scanline sampler table: the fade of the text's own scanline is used
     eng::fade_sampler_reset_for_tests();

@@ -6,7 +6,7 @@
 //  * decides ONCE per frame (stand-down predicate) whether the overlay or the engine owns the text;
 //  * when the overlay owns it, makes the engine's own dialogue draw call submit nothing (R0 := 0 at
 //    0x080658B8), without touching guest memory;
-//  * hands the snapshot that belongs to the PRESENTED frame to OverlayRenderer::draw() at present time.
+//  * hands the snapshot that belongs to the PRESENTED frame to the text engine (draw_page) at present time.
 //
 // The hook is installed only while the overlay is enabled (see wants_hook()); with the overlay off
 // nothing of this module runs. The pure parts (decoding + predicate) are free of runtime state so
