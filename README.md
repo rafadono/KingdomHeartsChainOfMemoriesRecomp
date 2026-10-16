@@ -18,7 +18,7 @@ Documentation map: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (source tree and
 [docs/GBA_IMPROVEMENTS_INTEGRATION.md](docs/GBA_IMPROVEMENTS_INTEGRATION.md) (how the library is wired in),
 [docs/TEXT_OVERLAY_ENGINE.md](docs/TEXT_OVERLAY_ENGINE.md) and [docs/TEXT_OVERLAY_RENDER.md](docs/TEXT_OVERLAY_RENDER.md) (HD dialogue text),
 [docs/CAPTURE_HARNESS.md](docs/CAPTURE_HARNESS.md) (headless capture and scripted input),
-[AGENTS.md](AGENTS.md) (build/test rules for contributors, in Spanish).
+[AGENTS.md](AGENTS.md) (build/test rules for contributors).
 
 ---
 
