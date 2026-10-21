@@ -117,7 +117,7 @@ is kept until the program exits). The "RESUME" row of the stock menu is removed.
 
 Sections: Display and Graphics (resolution, filters, view mode, upscaler, frame rate), Audio, **Dialogue Text (HD)**, Dialogue & Story,
 Controller (Gamepad), Keyboard Controls, Gameplay & Assist, Diagnostics & HUD, System. The view mode is chosen in Display:
-`3:2 (Native)` or `16:9 (Battles only)`.
+an aspect preset (`3:2 (Original)`, `16:10`, `16:9`, `21:9`, `32:9`); the wide presets only affect battles.
 
 ---
 
@@ -125,14 +125,25 @@ Controller (Gamepad), Keyboard Controls, Gameplay & Assist, Diagnostics & HUD, S
 
 ### View modes and widescreen (battles only)
 
-- **`3:2 (Native)`**: the original 240x160 picture, letter/pillar-boxed. The game behaves exactly as the original: switching back
+| Original 3:2 | 21:9 (373x160 logical) |
+|---|---|
+| ![Battle in 3:2](docs/screenshots/battle_3_2.png) | ![Battle in 21:9](docs/screenshots/battle_21_9.png) |
+
+Aspect presets come from the `view_aspect` module of gba-improvements: 3:2 (original), 16:10, 16:9, 21:9 and 32:9 (logical widths 240, 256, 284, 373 and 569 at
+160 lines; the cap is 640 in `game_config.cpp` and `game.toml`). The launcher also offers an adaptive mode that follows the window.
+
+- **`3:2 (Original)`**: the original 240x160 picture, letter/pillar-boxed. The game behaves exactly as the original: switching back
   to 3:2 (even in the middle of a battle) removes every widescreen provider and HUD displacement and resets the PPU policy globals
   to the faithful values (the policy is the `Widescreen` module of gba-improvements, configured by `src/widescreen_adapter.cpp` and covered by the *view-mode return-to-original* test).
-- **`16:9 (Battles only)`**: a 284x160 picture **only while a battle arena is shown**. Field maps, menus, the title screen and story
-  cutscenes stay 3:2 with black pillars. During battles the BG2/BG3 arena backgrounds reveal real extra scenery and the HUD (player
+- **Wide presets (`16:10` ... `32:9`)**: a wider picture **only while a battle arena is shown**. Field maps, menus, the title screen and story
+  cutscenes stay 3:2 with black pillars (no blur or stretched fill: when the game has nothing real to show there, the picture stays original). During battles the BG2/BG3 arena backgrounds reveal real extra scenery and the HUD (player
   portrait/HP top left, card deck bottom right) is shifted into the corners by exactly the real extra width of each side. **HUD
   anchoring is not a separate option** (the old `hud_anchoring=` line in `khcom_config.ini` is accepted and ignored).
 - Sprites keep their 1:1 pixel aspect at all times: no stretched "fat Sora".
+
+Limits of the real artwork: the arena backdrop is a 512x512 image, so the width that shows real scenery is bounded by the artwork of each arena
+(about 416 px wide in the arena measured so far), not by gbarecomp, whose engine capacity is 1280x864. A preset wider than the artwork shows its edge. Vertical
+extension (taller than 160 lines) is not implemented yet.
 
 Why only battles: battle backdrops are 360-degree wrapping tilemaps in VRAM (the wider view shows real artwork); field rooms, menus and
 cutscenes are authored and culled for exactly 240 px (the wider view would expose unrendered voids, enemies spawning in view,

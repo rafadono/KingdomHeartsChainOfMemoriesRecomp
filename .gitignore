@@ -54,3 +54,11 @@ symbols/*.elf
 # Keep directories intact
 !roms/.gitkeep
 !generated/.gitkeep
+
+# Local build trees, test captures, logs and diagnostics (never committed).
+# Screenshots meant for the README go in docs/screenshots/ (tracked, keep them few).
+build*/
+captures/
+diagnostics/
+*.log
+test_dump*.png

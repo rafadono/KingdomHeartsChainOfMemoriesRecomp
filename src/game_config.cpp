@@ -2,6 +2,8 @@
 #include "gbaimp_integration.h"
 #include "gbaimp/host_settings.h"
 #include "gbaimp/input_enhancements.h"
+#include "gbaimp/margin_fill.h"
+#include "gbaimp/view_aspect.h"
 #include "text_overlay/text_adapter.h"
 #include "gbaimp/text_history.h"
 #include "widescreen_adapter.h"
@@ -26,16 +28,7 @@ namespace khcom {
 
 namespace {
 
-const char* const kAspectLabels[] = {
-    "3:2 (Native)",
-    "16:9 (Battles only)"
-};
-
-const std::uint16_t kAspectWidths[] = {
-    240,
-    284
-};
-
+// Aspect vocabulary of the launcher: the library presets (3:2, 16:10, 16:9, 21:9, 32:9).
 #if defined(GBARECOMP_RUNTIME_UI)
 using gbaimp::Setting;
 using gbaimp::SettingKind;
@@ -604,16 +597,17 @@ gbarecomp::RunOptions create_run_options() {
     // Video display and viewport configuration:
     // Fixed 16:9 widescreen active ONLY during battle arenas; authentic 3:2 elsewhere
     opts.freely_resizable_window = true;
-    opts.resize_driven_view = false;
-    opts.max_view_width = 284;
-    opts.max_resize_view_width = 284;
+    opts.resize_driven_view = true;
+    opts.max_view_width = gbaimp::kDefaultMaxViewWidth;
+    opts.max_resize_view_width = gbaimp::kDefaultMaxViewWidth;
     opts.max_resize_view_height = 160;
     opts.launcher_expose_widescreen = true;
-    opts.launcher_expose_adaptive_view = false;
+    opts.launcher_expose_adaptive_view = true;
     opts.widescreen_view_width = 284;
-    opts.launcher_aspect_labels = kAspectLabels;
-    opts.launcher_aspect_view_widths = kAspectWidths;
-    opts.launcher_num_aspects = sizeof(kAspectWidths) / sizeof(kAspectWidths[0]);
+    const gbaimp::LauncherAspectTable aspects = gbaimp::launcher_aspect_table();
+    opts.launcher_aspect_labels = aspects.labels;
+    opts.launcher_aspect_view_widths = aspects.widths;
+    opts.launcher_num_aspects = aspects.count;
     opts.launcher_expose_sharp_filter = true;
     opts.launcher_default_sharp_filter = true;
     opts.extended_view_init = &khcom_install_widescreen_adapter;

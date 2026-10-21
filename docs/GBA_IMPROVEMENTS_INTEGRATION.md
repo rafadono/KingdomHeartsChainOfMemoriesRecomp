@@ -84,8 +84,8 @@ cleared and re-added, so exactly two exist afterwards).
 - HUD zones (reproduce the previous hard-coded behavior):
   - Health bar, top-left: `direction=-1`, coordinates `x<=90, y<=45`; OAM `x 0..85, y 0..40`, clamp `x >= -40`.
   - Card deck, bottom-right: `direction=+1`, coordinates `x>=130, y>=95`; OAM `x 135..240, y 100..160`, clamp `x <= 300`.
-  - HUD anchoring is **not a user option**. The only user choice is the view mode ("3:2 (Native)" /
-    "16:9 (Battles only)", chosen in gbarecomp's overlay). `gbaimp::Widescreen` (profile in `src/widescreen_adapter.cpp`) derives everything from the
+  - HUD anchoring is **not a user option**. The only user choice is the aspect preset (the library table
+    `gbaimp::launcher_aspect_table()`: 3:2, 16:10, 16:9, 21:9, 32:9, chosen in the launcher / gbarecomp's overlay). `gbaimp::Widescreen` (profile in `src/widescreen_adapter.cpp`) derives everything from the
     live host state (`g_ws_active`, `g_ws_extra_left/right`) and the battle flag in `apply_policy()`:
     while a battle arena is shown in the 16:9 view, the player HUD is shifted by `extra_left` and the enemy HUD by
     `extra_right` (the HUD keeps its original margin to the real screen edge) and `gbaimp::HudAnchoring` is set to
@@ -259,7 +259,7 @@ The counters are relaxed atomics and are always maintained; only the printing is
 ## In-game settings menu (`recomp_runtime_ui_create_standard`)
 
 gbarecomp's `run_game()` builds the settings menu with recomp-ui's `recomp_runtime_ui_create_standard()`.
-KHCOMRecomp needs different view-mode labels ("3:2 (Native)", "16:9 (Battles only)"), no RESUME row, and the
+KHCOMRecomp takes its aspect labels and widths from `gbaimp::launcher_aspect_table()`, no RESUME row, and the
 menu pointer (`khcom::g_active_runtime_ui`) for its open/close hotkeys.
 
 gbarecomp (`RunOptions`, `runtime.cpp`) and recomp-ui expose no hook for this: the labels, features and view

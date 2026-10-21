@@ -161,7 +161,7 @@ visible in the log as `bitmap-mismatch` / `bad-entry`); a view change between a 
 
 ### Geometry
 
-`DrawInfo::gba_w` = width of the presented image in GBA px: 240, or 240 + both margins in the 16:9 battle view (284). Snapshot x
+`DrawInfo::gba_w` = width of the presented image in GBA px: 240, or 240 + both margins in a wide battle view (e.g. 284 or 373). Snapshot x
 coordinates (glyphs, origin) include the left margin (+22), so `dst` of the whole image maps 1:1 (contract note in `overlay_types.h`). Wide
 boxes need no extra width: the engine itself wraps at 155 px from the origin (same constant as the story library); the box is wider only as
 decoration. Lines the engine indents with spaces (dark tutorial boxes) are reproduced by the render side from the engine glyph x (see

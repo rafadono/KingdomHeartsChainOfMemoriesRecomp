@@ -26,8 +26,8 @@ Montage / crop tool: `tools/capture/montage.py` (Python standard library only). 
 * `KHCOM_CAPTURE_VARIANTS="852x480 screen_mask=1|960x640 screen_mask=0"`: the live settings of a variant are applied by this
   game's callback: `screen_mask`, `mask_intensity`, `color_profile`, `xbrz_scale`, `motion_smoothing`, `perf_mode`
   and the `hdtext_*` keys (see `docs/TEXT_OVERLAY_RENDER.md`, plus `hdtext_family`). Other keys are ignored.
-* `native` captures are 284x160 (the 240x160 picture sits in the middle with 22 px black pillars in 3:2 mode; 16:9
-  battles fill all 284 px).
+* `native` captures have the logical size of the active view (284x160 with the default `view_width` of `game.toml`; the 240x160 picture sits in the
+  middle with black pillars in 3:2 mode; wide battles fill the whole width). Pass `--view-width N` (240, 256, 284, 373, 569) to pick another preset.
 * The `output` image of a run with `fps_target` above 60 or motion smoothing on has been seen to differ by one presented frame between
   runs of the same executable; for a bit-exact comparison pass `KHCOM_SET="fps_target=0;motion_smoothing=0"`. `native` captures are always exact.
 
@@ -70,7 +70,7 @@ frames up to 30000) later pages are at 12300 (Sora "To check it out! What's the 
 THAT"), 13800 (Donald "It must be a Heartless!..."), and the first (tutorial) battle is running from ~24000 on
 (dark tutorial box "B Button: Jump ...", card HUD at the bottom left): capture 26000.
 
-Battles use the 16:9 view (`[video] view_width = 284` in game.toml): the field is a 3:2 picture with pillar bars, the
+Battles use the wide view (`[video] view_width = 284` in game.toml; other presets via `--view-width`): the field is a 3:2 picture with pillar bars, the
 battle fills the whole 16:9 window. `ExtraArgs`/`--view-width 240` (runner `-ExtraArgs "--view-width 240"`) gives the
 3:2 battle for comparison. A bare `--rom/--bios` run uses the nearest-neighbour scaler; pass `-Sharp` / `-H`
 (`--sharp-filter 1`: integer prescale + linear finish) to reproduce the launcher's default scaler.

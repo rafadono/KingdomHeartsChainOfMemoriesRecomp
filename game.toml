@@ -18,7 +18,7 @@ size = 8192
 
 [video]
 view_width = 284
-max_resize_view_width = 284
+max_resize_view_width = 640
 resize_view = false
 
 [audio]

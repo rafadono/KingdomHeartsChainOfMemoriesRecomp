@@ -23,7 +23,7 @@ when it is compiled in). `run_game()` resets every game-owned hook at start, so 
 | File | Role |
 |---|---|
 | `main.cpp` | entry point (above): a `HostMainConfig` and `run_gbarecomp_host()` |
-| `game_config.{h,cpp}` | `RunOptions` (view modes 3:2 / 16:9, assist tools), this game's `gbaimp::SettingsRegistry` (wording and ranges over the standard settings, the `hdtext.*` and `dialogue.*` rows, `khcom_config.ini`, legacy keys), the `RuntimeUiBinding` that turns it into the runtime menu, capture-harness configuration |
+| `game_config.{h,cpp}` | `RunOptions` (aspect presets from `gbaimp/view_aspect.h`, assist tools), this game's `gbaimp::SettingsRegistry` (wording and ranges over the standard settings, the `hdtext.*` and `dialogue.*` rows, `khcom_config.ini`, legacy keys), the `RuntimeUiBinding` that turns it into the runtime menu, capture-harness configuration |
 | `gbaimp_integration.{h,cpp}` | registers the library hooks (`save_settings`, `is_input_blocked`, `frame_counter`) and the two HUD zones; sets up `gbaimp::M4aMusicHook` (HD music trigger) |
 | `sdl_intercepts.cpp` | this game's callbacks for the library's six generic SDL handlers (`PollEvent`, `UpdateTexture`, `RenderCopy`, `RenderPresent`, `QueueAudio`, `OpenAudioDevice`; `gbaimp/game_host.h`) and their registration |
 | `runtime_ui_standard.{h,cpp}` | view-mode labels for the stock settings menu (the rewrite is `gbaimp/runtime_ui_glue.h`, no RESUME row) and the menu pointer |
@@ -46,18 +46,18 @@ gbarecomp and recomp-ui call SDL directly, so the game observes those calls: Lin
 `gbaimp::sdl_real()`.
 
 - `PollEvent`: refreshes widescreen state, offers events to `gbaimp::TextHistory` and the perf HUD (consumed events are dropped).
-- `UpdateTexture`: native-frame capture hook, then colour-profile correction of the 240x160 / 284x160 RGB24 frame.
+- `UpdateTexture`: native-frame capture hook, then colour-profile correction of the RGB24 frame (any logical size from 240x160 up; `gbaimp::is_gba_game_texture`).
 - `RenderCopy` (game image only): computes the viewport (`gbaimp::widescreen_compute_viewport`), clears the bars, copies the image,
   draws the screen mask, then the **HD text overlay** (`engine::on_present`), so the settings menu that gbarecomp draws afterwards stays above the text.
 - `RenderPresent`: frame interpolation, perf HUD, conversation log sidebar (`TextHistory::render_sidebar`), harness capture, then the real present.
 - `OpenAudioDevice` / `QueueAudio`: audio path (below).
 
-### View mode policy (3:2 vs 16:9)
+### View mode policy (3:2 vs wide presets)
 The user picks the view in the recomp-ui menu; gbarecomp rewrites `g_ws_active/extra_left/extra_right/view_width`. The function-entry hook
 (chained by `gbaimp::Widescreen`, handler `on_fn_entry` in `widescreen_adapter.cpp`) watches mode-switch/handler addresses and sets the wide context (= in a battle); the
 same flag is also polled from the IWRAM mode words. `gbaimp::Widescreen::apply_policy()` (every frame, context change and SDL poll) derives
-the PPU globals from two inputs only, "view expanded?" and "in battle?": in 3:2 everything is reset to the faithful defaults; in 16:9 the providers are
-installed and the margins show real arena content only in battle (black pillars otherwise). The HUD zones are shifted by the real extra width per side while
+the PPU globals from two inputs only, "view expanded?" and "in battle?": in 3:2 everything is reset to the faithful defaults; in a wide preset the providers are
+installed and the margins show real arena content only in battle (black pillars otherwise, `gbaimp::MarginFill` stays on its default `Pillar` mode). The HUD zones are shifted by the real extra width per side while
 the wide picture is presented. There is no cached state, so mode switches and savestate loads cannot leave stale values.
 
 ### HD dialogue text overlay
