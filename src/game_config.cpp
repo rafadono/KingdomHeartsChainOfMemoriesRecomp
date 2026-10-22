@@ -76,6 +76,14 @@ const char* const kScreenMaskChoices[] = {
     "CRT Trinitron Aperture Grille"
 };
 
+const char* const kBattleViewChoices[] = {
+    "Off (160 lines, original)",
+    "Follow window (Adaptive view)",
+    "4:3 (240x180)",
+    "5:4 (240x192)",
+    "10:7 (320x224)"
+};
+
 const char* const kAnalogChoices[] = {
     "Digital (Original 8-Way)",
     "Analog 8-Way (Smooth Stick)",
@@ -497,6 +505,24 @@ void build_registry(SettingsRegistry& reg) {
     for (const char* id : kLegacyTextIds) reg.add_ignored_id(id);
     for (const char* key : kLegacyTextIniKeys) reg.add_ignored_ini_key(key);
 
+    // Taller battle view (extra rows above and below the arena). Applied by khcom_view_geometry when the view
+    // geometry is evaluated: live with the Adaptive view, otherwise at the next start.
+    {
+        Setting s;
+        s.id = "video.battle_view";
+        s.menu_section = "Graphics";
+        s.label = "Battle View Height";
+        s.tooltip = "Extra rows above and below the arena in battles (4:3, 5:4, 10:7); the Adaptive view follows the window";
+        s.kind = SettingKind::Choice;
+        s.min = 0; s.max = 4; s.step = 1;
+        s.choices = to_vec(kBattleViewChoices, 5);
+        s.ini_section = "Video";
+        s.ini_key = "battle_view";
+        s.get = [] { return khcom_get_battle_view(); };
+        s.set = [](int v) { khcom_set_battle_view(v); };
+        reg.add(std::move(s));
+    }
+
     // Menu order: this game's sections in its own order (the standard block comes in the library's order).
     // The relative order inside a section, which is also the key order of the ini, is kept.
     std::vector<Setting> all = reg.settings();
@@ -611,7 +637,9 @@ gbarecomp::RunOptions create_run_options() {
     opts.launcher_expose_sharp_filter = true;
     opts.launcher_default_sharp_filter = true;
     opts.extended_view_init = &khcom_install_widescreen_adapter;
+    opts.view_geometry = &khcom_view_geometry;
     opts.extended_view_frame = [](const gbarecomp::ExtendedViewFrameInfo* info) {
+        if (info) khcom_set_vertical_extras(info->extra_top, info->extra_bottom);
         khcom_update_widescreen_state();
         auto* bus = gbarecomp::active_bus();
         if (bus) {

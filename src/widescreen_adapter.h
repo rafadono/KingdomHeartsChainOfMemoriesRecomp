@@ -1,6 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include "gbaimp/widescreen.h"
+
+namespace gbarecomp { struct ViewGeometry; }
 
 /**
  * Widescreen profile for Kingdom Hearts: Chain of Memories.
@@ -27,6 +30,19 @@ extern "C" {
 // Sprite provider of the profile: moves the battle HUD to the screen edges, everything else
 // follows the library default.
 int khcom_obj_attr_x_provider(int oam_index, uint16_t attr0, uint16_t attr1, uint16_t attr2, int* out_x);
+// Vertical counterpart of the sprite provider: HUD to the top / bottom edge, overhanging world sprites.
+int khcom_obj_attr_y_provider(int oam_index, uint16_t attr0, uint16_t attr1, uint16_t attr2, int* out_y);
+// Arena artwork for the extra rows of a taller view (see gbaimp/affine_margin.h).
+const gbaimp::WsMarginPixel* khcom_margin_pixel_provider(int screen_y, int* left, int* width);
+// Battle view selection (video.battle_view): 0 = original 160 rows, 1 = follow the window (adaptive
+// view only), 2 = 4:3 (240x180), 3 = 5:4 (240x192), 4 = 10:7 (320x224).
+void khcom_set_battle_view(int mode);
+int khcom_get_battle_view();
+// RunOptions::view_geometry: applies the selected battle view to the runtime geometry and publishes the
+// extra rows to the widescreen module.
+void khcom_view_geometry(gbarecomp::ViewGeometry* geometry, int drawable_width, int drawable_height);
+// Per-frame sync of the extra rows from the runtime (ExtendedViewFrameInfo).
+void khcom_set_vertical_extras(uint32_t top, uint32_t bottom);
 // Configures the library's Widescreen instance with this game's profile (idempotent). Called by the
 // entry points below and early from the SDL interposer install, before any frame is presented.
 void khcom_configure_widescreen();

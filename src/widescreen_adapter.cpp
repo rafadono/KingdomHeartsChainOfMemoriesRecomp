@@ -2,11 +2,19 @@
 #include "gbaimp/hud_anchoring.h"
 #include "gbaimp/widescreen.h"
 #include "gbaimp/widescreen_gbarecomp.h"
+#include "gbaimp/affine_margin.h"
+#include "gbaimp/obj_geometry.h"
+#include "gbaimp/view_aspect.h"
+#include "view_config.h"
+#include "runtime_bus_bridge.h"
+#include "gba/gba_bus.h"
+#include "gba/gba_io.h"
 #include "dialogue_backlog.h"
 #include "gbaimp/m4a_music_hook.h"
 #include "gbaimp_integration.h"
 #include "text_overlay/engine_hooks.h"
 #include "armv4t/runtime_arm.h"
+#include <algorithm>
 #include <atomic>
 
 // Widescreen profile of Kingdom Hearts: Chain of Memories.
@@ -24,6 +32,45 @@ namespace {
 // True while the dialogue-overlay engine capture is chained in (see install_runtime_hooks). With
 // the overlay off nothing of it runs on a function entry.
 std::atomic<bool> s_overlay_hooked{false};
+
+// Selected battle view (see widescreen_adapter.h).
+std::atomic<int> s_battle_view{0};
+
+// Real arena artwork for the extra rows (BG2 only: BG3 is a translucent overlay that the hardware blends
+// with the other layers, a blend that margin rows do not apply).
+gbaimp::AffineMarginRenderer& margin_renderer() {
+    static gbaimp::AffineMarginRenderer r;
+    return r;
+}
+
+gbaimp::PpuMemory live_ppu_memory(void*) {
+    gbaimp::PpuMemory m;
+    gba::GbaBus* bus = gbarecomp::active_bus();
+    if (!bus) return m;
+    const uint8_t* io = bus->io().raw();
+    m.io = io;
+    m.dispcnt = static_cast<uint16_t>(io[0] | (io[1] << 8));
+    m.vram = bus->vram_ptr();
+    m.pal = bus->pal_ptr();
+    return m;
+}
+
+// Battle HUD groups, told apart from the world by priority and position (btl_hpply.c, btl_hpenm.c and the
+// card deck sprites). Text glyphs (16x16 square, priority 0) and dialogue boxes (priority 0) never qualify.
+enum class Hud { None, PlayerHp, EnemyHp, Deck };
+
+Hud classify_hud(uint16_t attr0, uint16_t attr1, uint16_t attr2) {
+    const int sx = gbaimp::obj_signed_x(attr1);
+    const int sy = gbaimp::obj_signed_y(attr0);
+    const int priority = static_cast<int>((attr2 >> 10) & 0x03u);
+    const bool is_16x16_square = ((attr0 & 0xC000u) == 0x0000u) && ((attr1 & 0xC000u) == 0x4000u);
+    if (is_16x16_square || priority != 1) return Hud::None;
+    if (sx >= -16 && sx <= 85 && sy >= -16 && sy <= 24) return Hud::PlayerHp;
+    if (sx >= 160 && sx <= 250 && sy >= -16 && sy <= 24) return Hud::EnemyHp;
+    // Card deck, bottom left: a column of 8..32 px pieces from x -18 to about 40 and y 100 to 160.
+    if (sx >= -24 && sx <= 40 && sy >= 95 && sy <= 159) return Hud::Deck;
+    return Hud::None;
+}
 
 inline void set_wide(bool battle) {
     gbaimp::Widescreen::instance().set_wide_context(battle);
@@ -171,6 +218,14 @@ void configure_once() {
     p.bg_x_provider = &gbaimp::default_bg_x_provider;
     p.centered_bg_layers = 0x3u;
     p.obj_attr_x_provider = &khcom_obj_attr_x_provider;
+    p.obj_attr_y_provider = &khcom_obj_attr_y_provider;
+    p.margin_pixel_provider = &khcom_margin_pixel_provider;
+    {
+        gbaimp::AffineMarginOptions mo;
+        mo.layer_mask = 0x04u;   // BG2
+        margin_renderer().set_options(mo);
+        margin_renderer().set_memory_source(&live_ppu_memory, nullptr);
+    }
     p.bg_x_provider_layers = 0xFu;
     p.authored_margin_layers = 1;
     p.obj_native_clip = 0;
@@ -209,42 +264,18 @@ int khcom_obj_attr_x_provider(int oam_index, uint16_t attr0, uint16_t attr1, uin
     // the widened view are the HUD sprites moved out to the real screen edges. Everywhere else
     // (3:2 view, field, menus, cutscenes) sprites are never displaced.
     if (ws.wide_context_cached()) {
-        const int raw_y = static_cast<int>(attr0 & 0xFFu);
-        const int sy = (raw_y >= 160) ? (raw_y - 256) : raw_y;
-
-        const uint16_t shape = (attr0 & 0xC000u);
-        const uint16_t size  = (attr1 & 0xC000u);
-        const int priority = static_cast<int>((attr2 >> 10) & 0x03u);
-
-        // Text glyph sprites in KH:CoM are strictly 16x16 square sprites with Priority 0.
-        // Dialogue text, message windows, and font glyphs must NEVER be displaced into margins.
-        const bool is_16x16_square = (shape == 0x0000u) && (size == 0x4000u);
-
         // The shift equals the real extra width of each side (extra_left/extra_right), so the
         // authored margin between HUD and screen edge stays exactly what the 3:2 game has: a sprite
         // at sx in the original 240px frame lands at (sx - extra_left) in the widened frame's
         // coordinates, i.e. at distance sx from the real left edge of the screen (likewise right).
         //
-        // Authentic player HP gauge & face portrait sprites (btl_hpply.c):
-        // - HP bar, gauge outline, and Sora/Riku face portrait pieces all have Priority 1 (SPRITE_PRIORITY(1))
-        // - Region: sx in [-16, 85], sy in [-16, 24]
-        // - None of the HP gauge sprites are 16x16 square (Sora face is 32x32 + 8x16, bar pieces are 32x8/32x16)
-        // - Dialogue windows and tutorial boxes (event_message.c) strictly use Priority 0 and must NEVER be displaced.
-        const bool is_player_hp = !is_16x16_square &&
-            (priority == 1 && sx >= -16 && sx <= 85 && sy >= -16 && sy <= 24);
-
-        if (is_player_hp) {
-            *out_x = sx - ws.extra_left();
-            return 1;
-        }
-
-        // Authentic enemy HP gauge sprites (btl_hpenm.c):
-        // - Priority is strictly 1 (SPRITE_PRIORITY(1))
-        // - Top-right health bar region: sy in [-16, 24], sx in [160, 250]
-        // - Gauge pieces are horizontal (32x8 / 32x16)
-        if (!is_16x16_square && priority == 1 && sx >= 160 && sx <= 250 && sy >= -16 && sy <= 24) {
-            *out_x = sx + ws.extra_right();
-            return 1;
+        // Player HP gauge and face portrait (priority 1, region sx in [-16, 85], sy in [-16, 24]) go to the
+        // left edge; the enemy HP gauge (priority 1, sx in [160, 250], same rows) to the right edge.
+        // Dialogue windows and tutorial boxes (priority 0) are never displaced.
+        switch (classify_hud(attr0, attr1, attr2)) {
+            case Hud::PlayerHp: *out_x = sx - ws.extra_left(); return 1;
+            case Hud::EnemyHp:  *out_x = sx + ws.extra_right(); return 1;
+            default: break;
         }
     }
 
@@ -255,6 +286,79 @@ int khcom_obj_attr_x_provider(int oam_index, uint16_t attr0, uint16_t attr1, uin
 }
 
 extern "C" {
+
+// Vertical counterpart: anchors the HUD to the top / bottom edge of the taller view and lets world sprites
+// overhang the native band into the extra rows.
+int khcom_obj_attr_y_provider(int, uint16_t attr0, uint16_t attr1, uint16_t attr2, int* out_y) {
+    gbaimp::Widescreen& ws = gbaimp::Widescreen::instance();
+    if (!out_y || !ws.presentation_active() || !ws.has_vertical_extent()) return 0;
+    if (gbaimp::obj_disabled(attr0)) return 0;
+    const int sy = gbaimp::obj_signed_y(attr0);
+    switch (classify_hud(attr0, attr1, attr2)) {
+        case Hud::PlayerHp:
+        case Hud::EnemyHp: *out_y = sy - ws.extra_top(); return 1;
+        case Hud::Deck:    *out_y = sy + ws.extra_bottom(); return 1;
+        default: break;
+    }
+    // World sprites: only those that really reach into the native band may overhang it. A sprite parked
+    // above the screen (raw Y wraps to a negative value) stays hidden.
+    int w = 0, h = 0;
+    gbaimp::obj_bounds(attr0, attr1, &w, &h);
+    if (sy + h > 0) { *out_y = sy; return 1; }
+    return 0;
+}
+
+// Arena artwork for the extra rows (affine BG2 of the battle arena).
+const gbaimp::WsMarginPixel* khcom_margin_pixel_provider(int screen_y, int* left, int* width) {
+    gbaimp::Widescreen& ws = gbaimp::Widescreen::instance();
+    if (!ws.presentation_active() || !ws.has_vertical_extent()) return nullptr;
+    return margin_renderer().provide(screen_y, ws.extra_left(), ws.extra_right(), left, width);
+}
+
+void khcom_set_vertical_extras(uint32_t top, uint32_t bottom) {
+    gbaimp::gbarecomp_set_vertical_extras(top, bottom);
+}
+
+void khcom_set_battle_view(int mode) {
+    s_battle_view.store(std::clamp(mode, 0, 4), std::memory_order_relaxed);
+}
+
+int khcom_get_battle_view() { return s_battle_view.load(std::memory_order_relaxed); }
+
+void khcom_view_geometry(gbarecomp::ViewGeometry* g, int drawable_w, int drawable_h) {
+    if (!g) return;
+    gbaimp::AspectSettings a;
+    a.max_view_width = gbaimp::kDefaultMaxViewWidth;
+    bool apply = false;
+    switch (s_battle_view.load(std::memory_order_relaxed)) {
+        case 1:   // follow the window; only when the runtime reports one (the fixed views have none)
+            a.preset = gbaimp::AspectPreset::Adaptive;
+            apply = drawable_w > 0 && drawable_h > 0;
+            break;
+        case 2: a.preset = gbaimp::AspectPreset::Standard4x3; apply = true; break;
+        case 3: a.preset = gbaimp::AspectPreset::Standard5x4; apply = true; break;
+        case 4: a.preset = gbaimp::AspectPreset::Console10x7; apply = true; break;
+        default: break;
+    }
+    if (apply) {
+        const gbaimp::ViewSize v = gbaimp::resolve_view_size(a, drawable_w, drawable_h);
+        int l = 0, r = 0, t = 0, b = 0;
+        gbaimp::split_extra(v.width, &l, &r);
+        gbaimp::split_extra_rows(v.height, &t, &b);
+        g->width = static_cast<uint32_t>(v.width);
+        g->height = static_cast<uint32_t>(v.height);
+        g->extra_left = static_cast<uint32_t>(l);
+        g->extra_right = static_cast<uint32_t>(r);
+        g->extra_top = static_cast<uint32_t>(t);
+        g->extra_bottom = static_cast<uint32_t>(b);
+    } else {
+        // Original 160 rows: whatever the runtime asked for, no extra rows.
+        g->height = 160;
+        g->extra_top = 0;
+        g->extra_bottom = 0;
+    }
+    gbaimp::gbarecomp_set_vertical_extras(g->extra_top, g->extra_bottom);
+}
 
 void khcom_configure_widescreen() { configure_once(); }
 

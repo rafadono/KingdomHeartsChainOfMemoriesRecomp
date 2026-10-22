@@ -23,6 +23,8 @@ enhancement modules and recompilation helper scripts.
 | Host integration points | `gbaimp/hooks.h` |
 | Host start-up sequence, RAM dispatcher, MSVC compat, scaffold stub | `gbaimp/host_main.h`, `gbaimp/ram_dispatch*.h`, `gbaimp/msvc_compat.h`, `gbaimp/scaffold_stub.h` |
 | Widescreen core (view policy, providers, viewport, hook chain) | `gbaimp/widescreen.h`, `gbaimp/widescreen_gbarecomp.h` |
+| Aspect presets and logical view size (width and height) | `gbaimp/view_aspect.h` |
+| Arena artwork for the extra rows of a taller view, sprite decoding | `gbaimp/affine_margin.h`, `gbaimp/obj_geometry.h` |
 | Settings registry, standard panel, `.ini` persistence, runtime menu binding | `gbaimp/host_settings.h`, `gbaimp/runtime_ui_settings.h` |
 | Headless capture harness | `gbaimp/capture_harness.h` |
 | m4a HD music trigger | `gbaimp/m4a_music_hook.h` |
@@ -98,6 +100,19 @@ cleared and re-added, so exactly two exist afterwards).
 
 `tests/test_all_modules.cpp` (`test_gbaimp_integration`) checks the registered zones against a copy of the
 old algorithm over a full coordinate grid.
+
+## Taller battle view
+
+The vertical extension is the generic vertical part of `gbaimp::Widescreen` plus this game's profile (`src/widescreen_adapter.cpp`):
+- Setting `video.battle_view` (`[Video] battle_view`, section Graphics of the menu): 0 Off, 1 Follow window, 2 4:3, 3 5:4, 4 10:7. It is registered by `game_config.cpp` next to
+  the standard rows and drives `khcom_view_geometry`, assigned to `RunOptions::view_geometry`. The presets and their sizes are `gbaimp::AspectPreset::Standard4x3`,
+  `Standard5x4`, `Console10x7` and `Adaptive` resolved by `gbaimp::resolve_view_size()`.
+- `gbaimp::gbarecomp_set_vertical_extras(top, bottom)` feeds the library's bindings (`extra_top`, `extra_bottom`) from the geometry callback and from `ExtendedViewFrameInfo` in
+  `extended_view_frame`; the profile sets `obj_attr_y_provider` and `margin_pixel_provider`.
+- The arena rows come from `gbaimp::AffineMarginRenderer` (BG2 only, `clamp_to_art`), fed by the live PPU memory (`gbarecomp::active_bus()`); the HUD anchoring uses
+  `gbaimp/obj_geometry.h`. `tests/test_all_modules.cpp` (`test_vertical_view`) covers the geometry callback, the sprite Y provider and the return to the faithful policy values.
+- 3:2 invariant: with `battle_view = 0` the geometry callback forces 160 rows, no vertical provider is installed and the native frames are identical to the version
+  without the feature (checked by comparing native capture hashes).
 
 ## Returning to the original 3:2 behavior
 

@@ -28,7 +28,7 @@ when it is compiled in). `run_game()` resets every game-owned hook at start, so 
 | `sdl_intercepts.cpp` | this game's callbacks for the library's six generic SDL handlers (`PollEvent`, `UpdateTexture`, `RenderCopy`, `RenderPresent`, `QueueAudio`, `OpenAudioDevice`; `gbaimp/game_host.h`) and their registration |
 | `runtime_ui_standard.{h,cpp}` | view-mode labels for the stock settings menu (the rewrite is `gbaimp/runtime_ui_glue.h`, no RESUME row) and the menu pointer |
 | `runtime_ui_imgui_enhanced.cpp` | replacement of recomp-ui's ImGui menu renderer (draggable window); compiled instead of `runtime_ui_imgui.cpp` |
-| `widescreen_adapter.{h,cpp}` | the game's profile of `gbaimp::Widescreen`: battle detection (mode descriptors, mode-function addresses, IWRAM mode words), the HUD-aware sprite provider, and the per-function-entry work (music trigger, battle tracking, overlay capture) |
+| `widescreen_adapter.{h,cpp}` | the game's profile of `gbaimp::Widescreen`: battle detection (mode descriptors, mode-function addresses, IWRAM mode words), the HUD-aware sprite providers (X and Y), the vertical view (geometry callback, arena artwork for the extra rows), and the per-function-entry work (music trigger, battle tracking, overlay capture) |
 | `dialogue_backlog.{h,cpp}` | conversation log observer: watches the guest bus reads that type cutscene dialogue and pushes `{speaker, text}` into `gbaimp::TextHistory` (panel, hotkeys, drawing and entry store are the library's) |
 | `text_overlay/` | HD dialogue text (below) |
 | `ram_overlay_dispatch.{h,cpp}` | generated dispatcher: native code for the routines the game runs from IWRAM/EWRAM |
@@ -59,6 +59,22 @@ same flag is also polled from the IWRAM mode words. `gbaimp::Widescreen::apply_p
 the PPU globals from two inputs only, "view expanded?" and "in battle?": in 3:2 everything is reset to the faithful defaults; in a wide preset the providers are
 installed and the margins show real arena content only in battle (black pillars otherwise, `gbaimp::MarginFill` stays on its default `Pillar` mode). The HUD zones are shifted by the real extra width per side while
 the wide picture is presented. There is no cached state, so mode switches and savestate loads cannot leave stale values.
+
+### Vertical view (taller battles)
+`khcom_view_geometry` (`RunOptions::view_geometry`, called by gbarecomp whenever the view geometry is resolved or the window changes) applies the **Battle View Height**
+setting (`video.battle_view`): it replaces the geometry with `gbaimp::resolve_view_size()` (`view_aspect.h`), splits the extra columns / rows (`split_extra`,
+`split_extra_rows`) and publishes the extra rows through `gbaimp::gbarecomp_set_vertical_extras()` (gbarecomp has no global for them; `extended_view_frame` repeats it from
+`ExtendedViewFrameInfo`). With the setting Off it forces 160 rows. `gbaimp::Widescreen` then treats a rows-only view as expanded, installs the vertical providers and keeps the
+original invariants (providers null, pillarbox 0 when the view is native).
+
+gbarecomp draws a row outside the native 160 only for authored content, so the adapter authors three things, all only while a battle is shown in the expanded view:
+- the arena rows: `khcom_margin_pixel_provider` hands out `gbaimp::AffineMarginRenderer` rows (BG2 of the arena, an affine 512x512 map; the margin renderer latches the live PPU memory
+  at the first margin row of each frame, finds the artwork bounds, samples and clamps to them, see `gbaimp/affine_margin.h`);
+- the HUD: `khcom_obj_attr_y_provider` classifies sprites like the X provider (player HP / enemy HP: `y - extra_top`; card deck: `y + extra_bottom`) and authorizes every other
+  sprite that reaches into the native band at its own signed Y, so characters may overhang the band; sprites parked above the screen stay hidden;
+- the backgrounds: `default_bg_x_provider` suppresses BG0 / BG1 (text, windows) and the wrapped rings on every row outside 0..159.
+
+Outside a battle the same texture is presented as the central 240x160 (`widescreen_viewport_rows`), rows black through the pillarbox policy.
 
 ### HD dialogue text overlay
 Settings: `overlay::settings()` (`hdtext_*`). Engine side `text_overlay/engine_hooks.cpp` (installed in the function-entry chain only while the overlay is

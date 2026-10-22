@@ -13,6 +13,8 @@
 #include "gbaimp/capture_harness.h"
 #include "game_config.h"
 #include "recomp_runtime_ui.h"
+#include "view_config.h"
+#include "gbaimp/widescreen_gbarecomp.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -737,7 +739,7 @@ static void test_config_ini_roundtrip() {
     namespace fs = std::filesystem;
     const char* canonical =
         "[Video]\n"
-        "fps_target=2\nmotion_smoothing=2\nxbrz_scale=2\ncolor_profile=2\nscreen_mask=1\nmask_intensity=40\n\n"
+        "fps_target=2\nmotion_smoothing=2\nxbrz_scale=2\ncolor_profile=2\nscreen_mask=1\nmask_intensity=40\nbattle_view=3\n\n"
         "[Audio]\n"
         "hd_enabled=1\nbgm_volume=135\nsfx_volume=100\neq_preset=2\nstereo_width=130\nanti_aliasing=1\nlimiter=1\n\n"
         "[Dialogue]\n"
@@ -783,7 +785,7 @@ static void test_config_ini_roundtrip() {
     // each one answering ui_get / ui_get_text / ui_action through the callbacks handed to the runtime.
     {
         gbarecomp::RunOptions opts = create_run_options();
-        assert(opts.ui_extra_item_count == 55);
+        assert(opts.ui_extra_item_count == 56);
         assert(opts.ui_get && opts.ui_set && opts.ui_action && opts.ui_get_text && opts.ui_set_text && opts.ui_enabled);
         const char* last_section = "";
         std::vector<std::string> section_order;
@@ -856,6 +858,100 @@ static void test_config_ini_roundtrip() {
     std::cout << "[PASS] khcom_config.ini: earlier layout loads and is written back unchanged, legacy keys ignored, values clamped" << std::endl;
 }
 
+// Vertical extension of the battle view: the geometry callback, the sprite Y provider (HUD anchored to the
+// top / bottom edge, world sprites untouched) and the return to the original 160 rows.
+static void test_vertical_view() {
+    gbaimp::HudAnchoring::instance().set_mode(gbaimp::HudAnchorMode::OriginalCentered);
+    gbaimp::HudAnchoring::instance().set_horizontal_offset(32);
+    g_ws_extra = g_ws_extra_left = g_ws_extra_right = 0; g_ws_view_width = 240; g_ws_active = 0;
+    khcom_set_vertical_extras(0, 0);
+    khcom_set_battle_active(false);
+    khcom_set_battle_view(0);
+    ws_runtime_boot_defaults();
+    khcom_install_widescreen_adapter(0, 0);
+    khcom_update_widescreen_state();
+    int out_y = 0;
+    // Native 3:2: nothing is installed and the provider declines everything.
+    assert(g_ws_obj_attr_y_provider == nullptr);
+    assert(g_ws_obj_margin_provider == nullptr);
+    assert(khcom_obj_attr_y_provider(0, 2 | 0x4000, 20 | 0x4000, 0x0400, &out_y) == 0);
+
+    // Geometry callback.
+    gbarecomp::ViewGeometry g;
+    khcom_view_geometry(&g, 0, 0);                                   // Off
+    assert(g.width == 240 && g.height == 160 && g.extra_top == 0 && g.extra_bottom == 0);
+    khcom_set_battle_view(2);                                        // 4:3
+    khcom_view_geometry(&g, 0, 0);
+    assert(g.width == 240 && g.height == 180 && g.extra_left == 0 && g.extra_right == 0);
+    assert(g.extra_top == 10 && g.extra_bottom == 10);
+    khcom_set_battle_view(3);                                        // 5:4
+    khcom_view_geometry(&g, 0, 0);
+    assert(g.height == 192 && g.extra_top == 16 && g.extra_bottom == 16);
+    khcom_set_battle_view(4);                                        // 10:7, 320x224
+    khcom_view_geometry(&g, 0, 0);
+    assert(g.width == 320 && g.height == 224 && g.extra_left == 40 && g.extra_right == 40);
+    assert(g.extra_top == 32 && g.extra_bottom == 32);
+    khcom_set_battle_view(1);                                        // follow the window
+    g = gbarecomp::ViewGeometry{};
+    khcom_view_geometry(&g, 1600, 1200);                             // 4:3 window
+    assert(g.width == 240 && g.height == 180);
+    khcom_view_geometry(&g, 1920, 1080);                             // 16:9 window: more columns, never rows
+    assert(g.width == 284 && g.height == 160 && g.extra_top == 0 && g.extra_bottom == 0);
+    g = gbarecomp::ViewGeometry{};
+    khcom_view_geometry(&g, 0, 0);                                   // fixed view: no window to follow
+    assert(g.width == 240 && g.height == 160);
+    khcom_set_battle_view(99);                                       // out of range clamps to the last entry
+    assert(khcom_get_battle_view() == 4);
+    khcom_set_battle_view(0);
+    g.height = 200; g.extra_top = 20; g.extra_bottom = 20;           // rows the runtime asked for are dropped
+    khcom_view_geometry(&g, 0, 0);
+    assert(g.height == 160 && g.extra_top == 0 && g.extra_bottom == 0);
+
+    // A 4:3 view (240x180): rows only. The view counts as expanded although no column was added.
+    khcom_set_battle_view(2);
+    khcom_view_geometry(&g, 0, 0);
+    g_ws_active = 1; g_ws_view_width = 240;
+    khcom_set_battle_active(true);
+    khcom_update_widescreen_state();
+    assert(gbaimp::Widescreen::instance().view_active());
+    assert(gbaimp::Widescreen::instance().has_vertical_extent());
+    assert(g_ws_obj_attr_y_provider == &khcom_obj_attr_y_provider);
+    assert(g_ws_obj_margin_provider != nullptr);
+
+    // Player HP gauge and enemy HP gauge go to the top edge (y - extra_top); the deck to the bottom edge.
+    assert(khcom_obj_attr_y_provider(3, 2 | 0x4000, 20 | 0x4000, 0x0400, &out_y) == 1 && out_y == 2 - 10);
+    assert(khcom_obj_attr_y_provider(4, 2 | 0x4000, 200 | 0x4000, 0x0400, &out_y) == 1 && out_y == 2 - 10);
+    assert(khcom_obj_attr_y_provider(5, 117 | 0x8000, 7 | 0xC000, 0x0400, &out_y) == 1 && out_y == 117 + 10);   // deck, 32x32
+    assert(khcom_obj_attr_y_provider(6, 148, 14, 0x0400, &out_y) == 1 && out_y == 148 + 10);                    // deck number, 8x8
+    // A world sprite keeps its own Y (it may overhang the band), a text glyph too.
+    assert(khcom_obj_attr_y_provider(7, 73, 37 | 0xC000, 0x0800, &out_y) == 1 && out_y == 73);
+    assert(khcom_obj_attr_y_provider(8, 150 | 0x8000, 100 | 0xC000, 0x0800, &out_y) == 1 && out_y == 150);       // reaches the bottom margin
+    assert(khcom_obj_attr_y_provider(9, 252, 100 | 0x4000, 0x0800, &out_y) == 1 && out_y == -4);                 // 16x16 half above the band
+    assert(khcom_obj_attr_y_provider(10, 20, 40 | 0x4000, 0x0000, &out_y) == 1 && out_y == 20);                   // dialogue glyph
+    // Parked above the screen (raw Y 200 = -56, 8 rows tall) and disabled sprites stay hidden.
+    assert(khcom_obj_attr_y_provider(11, 200, 40, 0x0800, &out_y) == 0);
+    assert(khcom_obj_attr_y_provider(12, 20 | 0x0200, 40, 0x0800, &out_y) == 0);
+    // The X provider is unchanged by rows alone (no extra columns).
+    int out_x = 0;
+    assert(khcom_obj_attr_x_provider(3, 2 | 0x4000, 20 | 0x4000, 0x0400, &out_x) == 1 && out_x == 20);
+
+    // Outside a battle the same view is presented as the original 3:2: the provider declines.
+    khcom_set_battle_active(false);
+    khcom_update_widescreen_state();
+    assert(khcom_obj_attr_y_provider(3, 2 | 0x4000, 20 | 0x4000, 0x0400, &out_y) == 0);
+    assert(g_ws_pillarbox == 1);
+
+    // Back to a native run: every policy value is the faithful one again.
+    khcom_set_battle_view(0);
+    khcom_view_geometry(&g, 0, 0);
+    g_ws_active = 0;
+    khcom_update_widescreen_state();
+    assert(g_ws_obj_attr_y_provider == nullptr && g_ws_obj_margin_provider == nullptr);
+    assert(g_ws_pillarbox == 0 && g_ws_authored_margin_layers == 0);
+    assert(!gbaimp::Widescreen::instance().view_active());
+    std::cout << "[PASS] Vertical battle view: geometry, sprite Y provider and return to 3:2" << std::endl;
+}
+
 int main() {
     std::cout << "================================================================" << std::endl;
     std::cout << "           KHCOMRecomp Native C++ Unit Test Runner             " << std::endl;
@@ -867,6 +963,7 @@ int main() {
     ++modules_run; test_dialogue_components();
     ++modules_run; test_widescreen_view_modes();
     ++modules_run; test_view_mode_return_to_original();
+    ++modules_run; test_vertical_view();
     ++modules_run; test_capture_harness();
     assert(run_text_adapter_tests(false) == 0);
     assert(run_overlay_engine_tests(false) == 0);

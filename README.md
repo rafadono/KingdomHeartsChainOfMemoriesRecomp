@@ -117,7 +117,8 @@ is kept until the program exits). The "RESUME" row of the stock menu is removed.
 
 Sections: Display and Graphics (resolution, filters, view mode, upscaler, frame rate), Audio, **Dialogue Text (HD)**, Dialogue & Story,
 Controller (Gamepad), Keyboard Controls, Gameplay & Assist, Diagnostics & HUD, System. The view mode is chosen in Display:
-an aspect preset (`3:2 (Original)`, `16:10`, `16:9`, `21:9`, `32:9`); the wide presets only affect battles.
+an aspect preset (`3:2 (Original)`, `16:10`, `16:9`, `21:9`, `32:9`); the wide presets only affect battles. A separate
+**Battle View Height** row adds rows above and below the arena (`4:3`, `5:4`, `10:7`) or follows the window (see below).
 
 ---
 
@@ -142,8 +143,38 @@ Aspect presets come from the `view_aspect` module of gba-improvements: 3:2 (orig
 - Sprites keep their 1:1 pixel aspect at all times: no stretched "fat Sora".
 
 Limits of the real artwork: the arena backdrop is a 512x512 image, so the width that shows real scenery is bounded by the artwork of each arena
-(about 416 px wide in the arena measured so far), not by gbarecomp, whose engine capacity is 1280x864. A preset wider than the artwork shows its edge. Vertical
-extension (taller than 160 lines) is not implemented yet.
+(about 416 px wide in the arena measured so far), not by gbarecomp, whose engine capacity is 1280x864. A preset wider than the artwork shows its edge.
+
+#### Taller battle view (vertical extension)
+
+| 4:3 (240x180) | 10:7 (320x224) |
+|---|---|
+| <img src="docs/screenshots/battle_4_3.png" width="480" alt="Battle in 4:3"> | <img src="docs/screenshots/battle_10_7.png" width="640" alt="Battle in 10:7"> |
+
+The **Battle View Height** setting (`battle_view` in the `[Video]` section of `khcom_config.ini`) makes the battle arena taller than 160 lines:
+
+| Value | Logical view | Notes |
+|---|---|---|
+| `0` Off | 240x160 (or the wide preset) | original rows, the default |
+| `1` Follow window | `240 x (240 / window ratio)` | only with the **Adaptive** view mode; a window wider than 3:2 gets more columns and never extra rows; capped at 320 rows |
+| `2` 4:3 | 240x180 | 10 extra rows above and below |
+| `3` 5:4 | 240x192 | 16 extra rows above and below |
+| `4` 10:7 | 320x224 | the Sega 32X H40 frame: 40 extra columns per side and 32 rows above and below |
+
+The fixed values replace the width of the selected aspect preset. The setting is read whenever the view geometry is evaluated: immediately with
+the Adaptive view, otherwise at the next start (the launcher aspect table only carries widths).
+
+- **Only battles.** Outside a battle the same view is presented as the original 3:2 (the central 240x160 area, black bars, no blur or stretch), exactly like the
+  wide presets. With the setting Off the picture is bit-identical to the version without this feature.
+- **Real artwork.** The runtime never extrapolates an affine background above or below the native band, so the extra rows of the arena (BG2, an affine 512x512 map) are
+  produced by the `affine_margin` module of gba-improvements: it finds the opaque artwork of the map and samples the rows with the hardware's own arithmetic. A row above the
+  art repeats its first row and a row below it repeats its last row; the wrapped far side of the map is never shown.
+- **HUD.** The player portrait / HP gauge and the enemy HP gauge move to the top edge of the taller view, the card deck to the bottom edge (a sprite keeps its original distance
+  from the real screen edge). World sprites are untouched and may overhang the original band into the extra rows. The dialogue and tutorial boxes stay where the game puts them.
+- **Limits.** In the arena measured so far (the first tutorial battle) the 512x512 backdrop holds about 170 real rows above the original 160-line window and only about 38 below it
+  (the art ends at map row 512); the camera moves inside the arena, so the margin changes during a fight. The 320x224 view uses 32 rows on each side, inside that
+  margin; larger taller views (for example a 3:4 window) repeat the last row below the arena. BG3 (a translucent overlay the hardware blends over the arena) and the text layers
+  (BG0 / BG1) are not extended into the extra rows. Other arenas were not measured.
 
 Why only battles: battle backdrops are 360-degree wrapping tilemaps in VRAM (the wider view shows real artwork); field rooms, menus and
 cutscenes are authored and culled for exactly 240 px (the wider view would expose unrendered voids, enemies spawning in view,
